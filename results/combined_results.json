@@ -1,0 +1,84 @@
+{
+  "overall": {
+    "Layer1_IsolationForest": {
+      "Precision": 0.3046,
+      "Recall": 0.269,
+      "F1": 0.2857,
+      "TP": 332,
+      "FP": 758,
+      "FN": 902,
+      "TN": 19029,
+      "FalseAlarmRate_%": 3.831
+    },
+    "Layer2_SensorCrossCheck": {
+      "Precision": 0.9985,
+      "Recall": 0.5438,
+      "F1": 0.7041,
+      "TP": 671,
+      "FP": 1,
+      "FN": 563,
+      "TN": 19786,
+      "FalseAlarmRate_%": 0.005
+    },
+    "Fused_OR": {
+      "Precision": 0.5259,
+      "Recall": 0.6823,
+      "F1": 0.594,
+      "TP": 842,
+      "FP": 759,
+      "FN": 392,
+      "TN": 19028,
+      "FalseAlarmRate_%": 3.836
+    }
+  },
+  "by_type": [
+    {
+      "FaultType": "spike",
+      "Class": "sensor fault",
+      "n": 12,
+      "Layer1": 1.0,
+      "Layer2": 0.0,
+      "Fused": 1.0
+    },
+    {
+      "FaultType": "stuck",
+      "Class": "sensor fault",
+      "n": 146,
+      "Layer1": 0.027,
+      "Layer2": 0.397,
+      "Fused": 0.418
+    },
+    {
+      "FaultType": "drift",
+      "Class": "sensor fault",
+      "n": 636,
+      "Layer1": 0.058,
+      "Layer2": 0.591,
+      "Fused": 0.61
+    },
+    {
+      "FaultType": "dropout",
+      "Class": "sensor fault",
+      "n": 213,
+      "Layer1": 0.643,
+      "Layer2": 0.826,
+      "Fused": 0.981
+    },
+    {
+      "FaultType": "frontal",
+      "Class": "environmental",
+      "n": 227,
+      "Layer1": 0.626,
+      "Layer2": 0.269,
+      "Fused": 0.758
+    },
+    {
+      "FaultType": "clean",
+      "Class": "-",
+      "n": 19787,
+      "Layer1": 0.0383,
+      "Layer2": 0.0001,
+      "Fused": 0.0384
+    }
+  ]
+}

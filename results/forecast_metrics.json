@@ -1,0 +1,30 @@
+{
+  "Persistence": {
+    "MAE": 0.8011,
+    "RMSE": 1.0095,
+    "R2": 0.9789,
+    "Skill_vs_Persistence_%": 0.0,
+    "train_seconds": 0.0
+  },
+  "Ridge": {
+    "MAE": 0.686,
+    "RMSE": 0.8613,
+    "R2": 0.9846,
+    "Skill_vs_Persistence_%": 14.37,
+    "train_seconds": 0.1
+  },
+  "RandomForest": {
+    "MAE": 0.6952,
+    "RMSE": 0.8713,
+    "R2": 0.9843,
+    "Skill_vs_Persistence_%": 13.22,
+    "train_seconds": 10.4
+  },
+  "GradientBoosting": {
+    "MAE": 0.6801,
+    "RMSE": 0.8513,
+    "R2": 0.985,
+    "Skill_vs_Persistence_%": 15.1,
+    "train_seconds": 4.0
+  }
+}

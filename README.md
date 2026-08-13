@@ -49,10 +49,22 @@ ThingSpeak wird **nur gelesen**, nie zum Trainieren benutzt.
 
 ```bash
 git clone <euer-repo>
-cd weather_ai
+cd IoT-Weather-Station
 python3 -m venv .venv
 source .venv/bin/activate        # Windows: .venv\Scripts\activate
-pip install -r requirements.txt
+python3 -m pip install -r requirements.txt
+```
+
+### Windows (PowerShell)
+
+`run_all.sh` ist ein Bash-Skript. Entweder Git Bash/WSL verwenden oder die
+Pipeline in PowerShell mit dem folgenden Befehl ausführen:
+
+```powershell
+py -m venv .venv
+.\.venv\Scripts\Activate.ps1
+py -m pip install -r requirements.txt
+& .\.venv\Scripts\python.exe make_testdata.py; & .\.venv\Scripts\python.exe train_forecast.py; & .\.venv\Scripts\python.exe train_anomaly.py; & .\.venv\Scripts\python.exe sensor_check.py; & .\.venv\Scripts\python.exe evaluate_combined.py
 ```
 
 Sofort-Test mit synthetischen Daten (die komplette Pipeline in einem Befehl):
@@ -60,6 +72,10 @@ Sofort-Test mit synthetischen Daten (die komplette Pipeline in einem Befehl):
 ```bash
 ./run_all.sh
 ```
+
+Die Python-Dateien liegen direkt im Projektordner (es gibt kein
+`src/`-Unterverzeichnis). Das Skript verwendet automatisch
+`.venv/bin/python`, falls das virtuelle Environment vorhanden ist.
 
 ---
 
@@ -74,8 +90,22 @@ Zeitreihe 2009–2016, 10-Minuten-Auflösung, enthält `T (degC)`, `rh (%)`, `p 
 deckt sich exakt mit DHT22 + BMP180. Über 400.000 Messpunkte.
 
 ```bash
-# CSV herunterladen und ablegen als:
-data/jena_climate_2009_2016.csv
+# macOS / Linux: herunterladen und direkt an der erwarteten Stelle entpacken
+mkdir -p data
+curl -L https://storage.googleapis.com/tensorflow/tf-keras-datasets/jena_climate_2009_2016.csv.zip \
+  -o /tmp/jena_climate.zip
+unzip -p /tmp/jena_climate.zip jena_climate_2009_2016.csv \
+  > data/jena_climate_2009_2016.csv
+rm /tmp/jena_climate.zip
+```
+
+Unter Windows (PowerShell):
+
+```powershell
+New-Item -ItemType Directory -Force data | Out-Null
+Invoke-WebRequest https://storage.googleapis.com/tensorflow/tf-keras-datasets/jena_climate_2009_2016.csv.zip -OutFile jena_climate.zip
+Expand-Archive jena_climate.zip -DestinationPath data -Force
+Remove-Item jena_climate.zip
 ```
 
 Dann in `config.py`:
@@ -84,12 +114,27 @@ Dann in `config.py`:
 DATASET = "jena"
 ```
 
+Danach die Pipeline erneut ausführen:
+
+```bash
+./run_all.sh
+```
+
+Jetzt werden die Modelle und Metriken mit echten Daten erzeugt. Die Datei muss
+genau `data/jena_climate_2009_2016.csv` heißen.
+
 ### Alternative: DWD Open Data
 
 Stündliche Stationsdaten des Deutschen Wetterdienstes, z. B. Stuttgart-Echterdingen.
 Gibt eurem Paper lokalen Bezug. Temperatur und Feuchte stecken im Produkt `TU`,
 der Luftdruck in `P0` — beide Dateien müsst ihr über `MESS_DATUM` zusammenführen.
 Format ist Semikolon-separiert, Fehlwerte sind `-999`.
+
+Die offiziellen Downloads liegen im DWD-Open-Data-Verzeichnis für
+[Temperatur/Luftfeuchte (TU)](https://opendata.dwd.de/climate_environment/CDC/observations_germany/climate/hourly/air_temperature/historical/)
+und [Luftdruck (P0)](https://opendata.dwd.de/climate_environment/CDC/observations_germany/climate/hourly/pressure/historical/).
+Diese Alternative erfordert die beschriebene Zusammenführung zu
+`data/dwd_stuttgart.csv`; für einen direkt ausführbaren Weg bitte Jena verwenden.
 
 Danach `DATASET = "dwd"` und ggf. `RESAMPLE = "1h"`, `STEP_MINUTES = 60` setzen.
 
@@ -101,23 +146,22 @@ Danach `DATASET = "dwd"` und ggf. `RESAMPLE = "1h"`, `STEP_MINUTES = 60` setzen.
 ## 5. Projektstruktur
 
 ```
-weather_ai/
+IoT-Weather-Station/
 ├── config.py                  Alle Parameter zentral
 ├── run_all.sh                 Komplette Pipeline
 ├── requirements.txt
 ├── data/                      Datensätze
 ├── models/                    Trainierte Modelle (.joblib)
 ├── results/                   Metriken, Tabellen, Plots → fürs Paper
-└── src/
-    ├── data_loader.py         Laden, Bereinigen, einheitliches Schema
-    ├── make_testdata.py       Synthetische Testdaten
-    ├── features.py            Feature Engineering
-    ├── train_forecast.py      Vorhersagemodell + Modellvergleich
-    ├── train_anomaly.py       Isolation Forest + Fehlerinjektion
-    ├── sensor_check.py        Layer 2: Kreuzvergleich der Sensoren
-    ├── evaluate_combined.py   Gesamtauswertung beider Layer
-    ├── predict_live.py        ThingSpeak → Vorhersage + Alarm
-    └── train_lstm.py          Optional: LSTM für die Vergleichstabelle
+├── data_loader.py             Laden, Bereinigen, einheitliches Schema
+├── make_testdata.py           Synthetische Testdaten
+├── features.py                Feature Engineering
+├── train_forecast.py          Vorhersagemodell + Modellvergleich
+├── train_anomaly.py           Isolation Forest + Fehlerinjektion
+├── sensor_check.py            Layer 2: Kreuzvergleich der Sensoren
+├── evaluate_combined.py       Gesamtauswertung beider Layer
+├── predict_live.py            ThingSpeak → Vorhersage + Alarm
+└── train_lstm.py              Optional: LSTM für die Vergleichstabelle
 ```
 
 ---
@@ -208,12 +252,18 @@ THINGSPEAK = dict(
 )
 ```
 
+Prüft vor dem Start, dass die vier `field_map`-Einträge zu eurem ThingSpeak-Kanal
+passen: `field1` Temperatur DHT22, `field2` Feuchte, `field3` Luftdruck BMP180
+und `field4` Temperatur BMP180. Bei einem öffentlichen Kanal bleibt
+`read_api_key` leer; bei einem privaten Kanal ist der **Read API Key** nötig.
+Die beiden Modelle müssen zuvor mit `./run_all.sh` trainiert worden sein.
+
 Dann:
 
 ```bash
-python3 src/predict_live.py              # einmalig
-python3 src/predict_live.py --watch 300  # alle 5 Minuten
-python3 src/predict_live.py --json       # maschinenlesbar
+python3 predict_live.py              # einmalig
+python3 predict_live.py --watch 300  # alle 5 Minuten
+python3 predict_live.py --json       # maschinenlesbar
 ```
 
 Optional Rückschreiben in einen zweiten ThingSpeak-Kanal (Vorhersage,

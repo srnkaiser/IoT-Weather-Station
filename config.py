@@ -30,7 +30,7 @@ for _d in (DATA_DIR, MODEL_DIR, RESULTS_DIR):
 #                DHT22 + BMP180. This is the recommended dataset.
 #   dwd       -> Deutscher Wetterdienst hourly station data (Open Data).
 #                Temperature + humidity in the "TU" product, pressure in "P0".
-DATASET = "synthetic"
+DATASET = "jena"
 
 DATASET_FILES = {
     "synthetic": DATA_DIR / "weather_synthetic.csv",

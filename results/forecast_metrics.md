@@ -1,0 +1,8 @@
+# Forecast results (60 min horizon, dataset: synthetic)
+
+| Model            |    MAE |   RMSE |     R2 |   Skill_vs_Persistence_% |   train_seconds |
+|:-----------------|-------:|-------:|-------:|-------------------------:|----------------:|
+| Persistence      | 0.8011 | 1.0095 | 0.9789 |                     0    |             0   |
+| Ridge            | 0.686  | 0.8613 | 0.9846 |                    14.37 |             0.1 |
+| RandomForest     | 0.6952 | 0.8713 | 0.9843 |                    13.22 |            10.4 |
+| GradientBoosting | 0.6801 | 0.8513 | 0.985  |                    15.1  |             4   |
