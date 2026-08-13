@@ -1,44 +1,44 @@
 {
   "overall": {
-    "Precision": 0.3046,
-    "Recall": 0.269,
-    "F1": 0.2857,
-    "TP": 332,
-    "FP": 758,
-    "FN": 902,
-    "TN": 19029,
-    "FalseAlarmRate_%": 3.831
+    "Precision": 0.0875,
+    "Recall": 0.1855,
+    "F1": 0.1189,
+    "TP": 233,
+    "FP": 2430,
+    "FN": 1023,
+    "TN": 79993,
+    "FalseAlarmRate_%": 2.948
   },
   "by_type": {
     "spike": {
       "n_samples": 12,
       "Recall": 1.0,
-      "MeanScore": 0.0561
+      "MeanScore": 0.0543
     },
     "stuck": {
-      "n_samples": 146,
-      "Recall": 0.0274,
-      "MeanScore": -0.064
+      "n_samples": 167,
+      "Recall": 0.012,
+      "MeanScore": -0.1443
     },
     "drift": {
-      "n_samples": 636,
-      "Recall": 0.0582,
-      "MeanScore": -0.0935
+      "n_samples": 637,
+      "Recall": 0.0126,
+      "MeanScore": -0.1428
     },
     "dropout": {
       "n_samples": 213,
-      "Recall": 0.6432,
-      "MeanScore": 0.0251
+      "Recall": 0.3239,
+      "MeanScore": -0.0092
     },
     "frontal": {
       "n_samples": 227,
       "Recall": 0.6256,
-      "MeanScore": 0.011
+      "MeanScore": 0.0042
     },
     "clean": {
-      "n_samples": 19787,
-      "Recall": 0.0383,
-      "MeanScore": -0.0998
+      "n_samples": 82423,
+      "Recall": 0.0295,
+      "MeanScore": -0.1418
     }
   }
 }

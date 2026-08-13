@@ -1,30 +1,30 @@
 {
   "Persistence": {
-    "MAE": 0.8011,
-    "RMSE": 1.0095,
-    "R2": 0.9789,
+    "MAE": 0.7207,
+    "RMSE": 1.0143,
+    "R2": 0.9843,
     "Skill_vs_Persistence_%": 0.0,
     "train_seconds": 0.0
   },
   "Ridge": {
-    "MAE": 0.686,
-    "RMSE": 0.8613,
-    "R2": 0.9846,
-    "Skill_vs_Persistence_%": 14.37,
-    "train_seconds": 0.1
+    "MAE": 0.4934,
+    "RMSE": 0.7116,
+    "R2": 0.9923,
+    "Skill_vs_Persistence_%": 31.54,
+    "train_seconds": 0.2
   },
   "RandomForest": {
-    "MAE": 0.6952,
-    "RMSE": 0.8713,
-    "R2": 0.9843,
-    "Skill_vs_Persistence_%": 13.22,
-    "train_seconds": 10.4
+    "MAE": 0.4629,
+    "RMSE": 0.6772,
+    "R2": 0.993,
+    "Skill_vs_Persistence_%": 35.77,
+    "train_seconds": 58.9
   },
   "GradientBoosting": {
-    "MAE": 0.6801,
-    "RMSE": 0.8513,
-    "R2": 0.985,
-    "Skill_vs_Persistence_%": 15.1,
-    "train_seconds": 4.0
+    "MAE": 0.4544,
+    "RMSE": 0.6606,
+    "R2": 0.9933,
+    "Skill_vs_Persistence_%": 36.95,
+    "train_seconds": 7.8
   }
 }
