@@ -1,4 +1,4 @@
 Detector,Precision,Recall,F1,FalseAlarmRate_%
-Layer1_IsolationForest,0.3046,0.269,0.2857,3.831
-Layer2_SensorCrossCheck,0.9985,0.5438,0.7041,0.005
-Fused_OR,0.5259,0.6823,0.594,3.836
+Layer1_IsolationForest,0.0875,0.1855,0.1189,2.948
+Layer2_SensorCrossCheck,1.0,0.5462,0.7065,0.0
+Fused_OR,0.2548,0.6616,0.3679,2.948

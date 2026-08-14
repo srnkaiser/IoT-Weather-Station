@@ -142,6 +142,7 @@ IFOREST_PARAMS = dict(n_estimators=200, contamination=0.03,
 CROSSCHECK = dict(
     mad_k=6.0,           # threshold = median + k * MAD of the difference
     min_abs_delta=2.0,   # never flag below this many degrees (noise floor)
+    expected_bmp_offset=0.35,  # BMP180 temperature is typically this much warmer
     persistence=6,       # must persist this many samples before flagging
     flatline_window=18,  # samples with zero variance -> stuck sensor
 )
@@ -150,17 +151,18 @@ CROSSCHECK = dict(
 # ThingSpeak (live inference only - never used for training)
 # --------------------------------------------------------------------------
 THINGSPEAK = dict(
-    channel_id="YOUR_CHANNEL_ID",
-    read_api_key="YOUR_READ_API_KEY",   # leave empty string if channel is public
+    channel_id="3448191",
+    read_api_key="",   # leave empty string if channel is public
     results=800,                        # how many recent points to fetch
     field_map={
         "field1": "temperature",      # DHT22
         "field2": "humidity",         # DHT22
-        "field3": "pressure",         # BMP180
-        "field4": "temperature_bmp",  # BMP180 - cross-check only
+        "field3": "temperature_bmp",  # BMP180 - cross-check only
+        "field5": "pressure",         # BMP180
     },
     # Optional: write predictions back to a second channel
-    write_api_key="",
+    write_channel_id="3451792",
+    write_api_key="QLR5294N5UEDRROP", 
     write_channel_fields={
         "field1": "forecast_temperature",
         "field2": "anomaly_flag",

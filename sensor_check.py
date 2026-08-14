@@ -62,17 +62,26 @@ def detect_flatline(s: pd.Series, window: int) -> pd.Series:
 
 def detect_crosscheck(t_primary: pd.Series, t_secondary: pd.Series,
                       k: float, min_abs: float, persistence: int,
-                      reference: pd.Series | None = None) -> tuple[pd.Series, float]:
+                      reference: pd.Series | None = None,
+                      expected_bmp_offset: float = 0.0) -> tuple[pd.Series, float]:
     """
     Flag sustained divergence between the two temperature sensors.
 
-    reference: a clean stretch used to calibrate the threshold. In production
-    use the first days after commissioning, when both sensors are known good.
+    reference: a clean stretch used to calibrate the threshold. When it is not
+    available (as in live operation), compare against the configured expected
+    BMP180 offset instead of calibrating from possibly faulty live readings.
     """
     diff = t_primary - t_secondary
-    thr = robust_threshold(reference if reference is not None else diff,
-                           k, min_abs)
-    exceed = (diff.abs() > thr)
+    if reference is not None:
+        thr = robust_threshold(reference, k, min_abs)
+        exceed = diff.abs() > thr
+    else:
+        # BMP180 often reads slightly warmer because its die is near the
+        # electronics. A persistent deviation beyond the allowed noise floor
+        # is a sensor fault even if all recent values share that deviation.
+        expected_diff = -expected_bmp_offset
+        thr = min_abs
+        exceed = (diff - expected_diff).abs() > thr
     sustained = exceed.rolling(persistence, min_periods=persistence).min().fillna(0).astype(bool)
     sustained = sustained[::-1].rolling(persistence, min_periods=1).max().astype(bool)[::-1]
     return sustained, thr
@@ -101,7 +110,8 @@ def run_checks(df: pd.DataFrame, reference_diff: pd.Series | None = None) -> pd.
         cross, thr = detect_crosscheck(
             df["temperature"], df["temperature_bmp"],
             k=p["mad_k"], min_abs=p["min_abs_delta"],
-            persistence=p["persistence"], reference=reference_diff)
+            persistence=p["persistence"], reference=reference_diff,
+            expected_bmp_offset=p.get("expected_bmp_offset", 0.0))
         out["crosscheck_fault"] = cross
         out.attrs["crosscheck_threshold"] = thr
 

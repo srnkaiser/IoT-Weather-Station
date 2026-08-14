@@ -18,13 +18,13 @@
     "RMSE": 0.6772,
     "R2": 0.993,
     "Skill_vs_Persistence_%": 35.77,
-    "train_seconds": 58.9
+    "train_seconds": 50.0
   },
   "GradientBoosting": {
     "MAE": 0.4544,
     "RMSE": 0.6606,
     "R2": 0.9933,
     "Skill_vs_Persistence_%": 36.95,
-    "train_seconds": 7.8
+    "train_seconds": 5.5
   }
 }

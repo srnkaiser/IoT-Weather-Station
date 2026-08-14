@@ -1,34 +1,34 @@
 {
   "overall": {
     "Layer1_IsolationForest": {
-      "Precision": 0.3046,
-      "Recall": 0.269,
-      "F1": 0.2857,
-      "TP": 332,
-      "FP": 758,
-      "FN": 902,
-      "TN": 19029,
-      "FalseAlarmRate_%": 3.831
+      "Precision": 0.0875,
+      "Recall": 0.1855,
+      "F1": 0.1189,
+      "TP": 233,
+      "FP": 2430,
+      "FN": 1023,
+      "TN": 79993,
+      "FalseAlarmRate_%": 2.948
     },
     "Layer2_SensorCrossCheck": {
-      "Precision": 0.9985,
-      "Recall": 0.5438,
-      "F1": 0.7041,
-      "TP": 671,
-      "FP": 1,
-      "FN": 563,
-      "TN": 19786,
-      "FalseAlarmRate_%": 0.005
+      "Precision": 1.0,
+      "Recall": 0.5462,
+      "F1": 0.7065,
+      "TP": 686,
+      "FP": 0,
+      "FN": 570,
+      "TN": 82423,
+      "FalseAlarmRate_%": 0.0
     },
     "Fused_OR": {
-      "Precision": 0.5259,
-      "Recall": 0.6823,
-      "F1": 0.594,
-      "TP": 842,
-      "FP": 759,
-      "FN": 392,
-      "TN": 19028,
-      "FalseAlarmRate_%": 3.836
+      "Precision": 0.2548,
+      "Recall": 0.6616,
+      "F1": 0.3679,
+      "TP": 831,
+      "FP": 2430,
+      "FN": 425,
+      "TN": 79993,
+      "FalseAlarmRate_%": 2.948
     }
   },
   "by_type": [
@@ -43,42 +43,42 @@
     {
       "FaultType": "stuck",
       "Class": "sensor fault",
-      "n": 146,
-      "Layer1": 0.027,
-      "Layer2": 0.397,
-      "Fused": 0.418
+      "n": 167,
+      "Layer1": 0.012,
+      "Layer2": 0.491,
+      "Fused": 0.491
     },
     {
       "FaultType": "drift",
       "Class": "sensor fault",
-      "n": 636,
-      "Layer1": 0.058,
-      "Layer2": 0.591,
-      "Fused": 0.61
+      "n": 637,
+      "Layer1": 0.013,
+      "Layer2": 0.57,
+      "Fused": 0.582
     },
     {
       "FaultType": "dropout",
       "Class": "sensor fault",
       "n": 213,
-      "Layer1": 0.643,
+      "Layer1": 0.324,
       "Layer2": 0.826,
-      "Fused": 0.981
+      "Fused": 0.925
     },
     {
       "FaultType": "frontal",
       "Class": "environmental",
       "n": 227,
       "Layer1": 0.626,
-      "Layer2": 0.269,
-      "Fused": 0.758
+      "Layer2": 0.286,
+      "Fused": 0.744
     },
     {
       "FaultType": "clean",
       "Class": "-",
-      "n": 19787,
-      "Layer1": 0.0383,
-      "Layer2": 0.0001,
-      "Fused": 0.0384
+      "n": 82423,
+      "Layer1": 0.0295,
+      "Layer2": 0.0,
+      "Fused": 0.0295
     }
   ]
 }
