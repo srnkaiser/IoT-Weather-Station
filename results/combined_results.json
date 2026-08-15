@@ -1,34 +1,44 @@
 {
   "overall": {
     "Layer1_IsolationForest": {
-      "Precision": 0.0875,
-      "Recall": 0.1855,
-      "F1": 0.1189,
-      "TP": 233,
-      "FP": 2430,
-      "FN": 1023,
-      "TN": 79993,
-      "FalseAlarmRate_%": 2.948
+      "Precision": 0.0675,
+      "Recall": 0.1425,
+      "F1": 0.0917,
+      "TP": 179,
+      "FP": 2471,
+      "FN": 1077,
+      "TN": 79976,
+      "FalseAlarmRate_%": 2.997
     },
     "Layer2_SensorCrossCheck": {
       "Precision": 1.0,
-      "Recall": 0.5462,
-      "F1": 0.7065,
-      "TP": 686,
+      "Recall": 0.5048,
+      "F1": 0.6709,
+      "TP": 634,
       "FP": 0,
-      "FN": 570,
-      "TN": 82423,
+      "FN": 622,
+      "TN": 82447,
       "FalseAlarmRate_%": 0.0
     },
     "Fused_OR": {
-      "Precision": 0.2548,
-      "Recall": 0.6616,
-      "F1": 0.3679,
-      "TP": 831,
-      "FP": 2430,
-      "FN": 425,
-      "TN": 79993,
-      "FalseAlarmRate_%": 2.948
+      "Precision": 0.2357,
+      "Recall": 0.6067,
+      "F1": 0.3395,
+      "TP": 762,
+      "FP": 2471,
+      "FN": 494,
+      "TN": 79976,
+      "FalseAlarmRate_%": 2.997
+    },
+    "Layer2_vs_hardware_faults_only": {
+      "Precision": 1.0,
+      "Recall": 0.6161,
+      "F1": 0.7625,
+      "TP": 634,
+      "FP": 0,
+      "FN": 395,
+      "TN": 82447,
+      "FalseAlarmRate_%": 0.0
     }
   },
   "by_type": [
@@ -52,15 +62,15 @@
       "FaultType": "drift",
       "Class": "sensor fault",
       "n": 637,
-      "Layer1": 0.013,
-      "Layer2": 0.57,
-      "Fused": 0.582
+      "Layer1": 0.011,
+      "Layer2": 0.59,
+      "Fused": 0.601
     },
     {
       "FaultType": "dropout",
       "Class": "sensor fault",
       "n": 213,
-      "Layer1": 0.324,
+      "Layer1": 0.329,
       "Layer2": 0.826,
       "Fused": 0.925
     },
@@ -68,17 +78,23 @@
       "FaultType": "frontal",
       "Class": "environmental",
       "n": 227,
-      "Layer1": 0.626,
-      "Layer2": 0.286,
-      "Fused": 0.744
+      "Layer1": 0.388,
+      "Layer2": 0.0,
+      "Fused": 0.388
     },
     {
       "FaultType": "clean",
       "Class": "-",
-      "n": 82423,
-      "Layer1": 0.0295,
+      "n": 82447,
+      "Layer1": 0.03,
       "Layer2": 0.0,
-      "Fused": 0.0295
+      "Fused": 0.03
     }
-  ]
+  ],
+  "classification": {
+    "weather_events_detected": 88,
+    "weather_classified_correctly": 88,
+    "hardware_faults_detected": 674,
+    "hardware_classified_correctly": 634
+  }
 }

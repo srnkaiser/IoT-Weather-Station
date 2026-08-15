@@ -102,22 +102,86 @@ def main():
     print("-" * 72)
     print(per_type.to_string())
 
+    # --- Layer 2 measured against the job it actually has -----------------
+    # The table above scores every detector against "was anything injected
+    # here", which quietly penalises Layer 2 for its correct behaviour: a
+    # frontal passage is a weather event, both sensors register it, and Layer 2
+    # is supposed to stay silent. Counting that silence as a miss understates
+    # a cross-check that is doing exactly what it was built for.
+    #
+    # Layer 2 detects hardware faults. Scored against hardware faults:
+    is_sensor_fault = ftype.isin(["spike", "stuck", "drift", "dropout"]).to_numpy()
+    is_env = (ftype == "frontal").to_numpy()
+    sensor_only_label = is_sensor_fault.astype(int)
+
+    l2_sensor = evaluate(sensor_only_label[~is_env], l2.to_numpy()[~is_env])
+    print("\n" + "-" * 72)
+    print("LAYER 2 SCORED AGAINST HARDWARE FAULTS ONLY")
+    print("(weather events excluded - Layer 2 is meant to ignore those)")
+    print("-" * 72)
+    for k in ("Precision", "Recall", "F1", "FalseAlarmRate_%"):
+        print(f"  {k:<20} {l2_sensor[k]}")
+
+    # --- Can the pair tell the two classes apart? -------------------------
+    # This is the architecture's actual claim, and nothing above tests it:
+    # not "was something detected" but "was it correctly identified as
+    # weather rather than a broken sensor". Only events that were detected
+    # at all can be classified, so the rate is reported over those.
+    detected = (fused == 1).to_numpy()
+    n_env_det = int((is_env & detected).sum())
+    n_hw_det = int((is_sensor_fault & detected).sum())
+    env_correct = int((is_env & detected & (l2.to_numpy() == 0)).sum())
+    hw_correct = int((is_sensor_fault & detected & (l2.to_numpy() == 1)).sum())
+
     print("\n" + "-" * 72)
     print("CLASSIFICATION OF DETECTED EVENTS")
     print("-" * 72)
     print("  Layer 2 silent, Layer 1 fires  -> environmental anomaly (weather)")
     print("  Layer 2 fires                  -> hardware fault, data untrustworthy")
+    print()
+    if n_env_det:
+        print(f"  Weather events detected  : {n_env_det:>6}   "
+              f"correctly called weather: {env_correct:>6} "
+              f"({100 * env_correct / n_env_det:.1f} %)")
+    if n_hw_det:
+        print(f"  Hardware faults detected : {n_hw_det:>6}   "
+              f"correctly called faults : {hw_correct:>6} "
+              f"({100 * hw_correct / n_hw_det:.1f} %)")
+
+    classification = {
+        "weather_events_detected": n_env_det,
+        "weather_classified_correctly": env_correct,
+        "hardware_faults_detected": n_hw_det,
+        "hardware_classified_correctly": hw_correct,
+    }
+    overall["Layer2_vs_hardware_faults_only"] = l2_sensor
 
     tbl.to_csv(cfg.RESULTS_DIR / "combined_overall.csv")
     per_type.to_csv(cfg.RESULTS_DIR / "combined_by_type.csv")
+
+    l2_line = " | ".join(f"{k} {l2_sensor[k]}" for k in
+                         ("Precision", "Recall", "F1", "FalseAlarmRate_%"))
     (cfg.RESULTS_DIR / "combined_results.md").write_text(
         "# Two-layer anomaly detection results\n\n"
         f"Dataset: `{cfg.DATASET}`  |  Test samples: {len(label):,}  |  "
         f"Injected anomalies: {int(label.sum()):,}\n\n"
         "## Overall\n\n" + tbl.to_markdown() +
-        "\n\n## Recall by fault type\n\n" + per_type.to_markdown() + "\n")
+        "\n\n## Recall by fault type\n\n" + per_type.to_markdown() +
+        "\n\n## Layer 2 scored against hardware faults only\n\n"
+        "The overall table scores every detector against 'was anything "
+        "injected here'. That penalises Layer 2 for correct behaviour: a "
+        "frontal passage is weather, both sensors see it, and Layer 2 is "
+        "meant to stay silent. Scored against the faults it actually "
+        "targets:\n\n"
+        f"{l2_line}\n\n"
+        "## Classification of detected events\n\n"
+        f"- Weather events detected: {n_env_det}, correctly identified as "
+        f"weather: {env_correct}\n"
+        f"- Hardware faults detected: {n_hw_det}, correctly identified as "
+        f"faults: {hw_correct}\n")
     with open(cfg.RESULTS_DIR / "combined_results.json", "w") as f:
-        json.dump({"overall": overall, "by_type": rows}, f, indent=2)
+        json.dump({"overall": overall, "by_type": rows,
+                   "classification": classification}, f, indent=2)
 
     print("\nSaved -> results/combined_results.{md,json}, combined_*.csv")
 

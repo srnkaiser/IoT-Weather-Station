@@ -48,17 +48,27 @@ from features import build_features
 
 
 # Compact, altitude-invariant feature set for anomaly detection.
-ANOMALY_FEATURES = [
+#
+# Derived from the configured windows rather than written out by hand: these
+# names have to exist in the matrix build_features() produces, so hard-coding
+# them means every change to LAGS_MIN/TENDENCY_MIN/ROLLING_MIN breaks training
+# with a KeyError that points at this list instead of at the actual cause.
+_T_FAST = min(cfg.TENDENCY_MIN)   # fastest jump -> spikes
+_T_SLOW = max(cfg.TENDENCY_MIN)   # medium-term change -> frontal passages
+_ROLL = max(cfg.ROLLING_MIN)      # variability window
+
+ANOMALY_FEATURES = list(dict.fromkeys([
     # Level and physical consistency
     "temperature", "humidity", "dewpoint_spread",
     # Short-term jumps -> spikes
-    "temperature_tend10", "humidity_tend10",
+    f"temperature_tend{_T_FAST}", f"humidity_tend{_T_FAST}",
     # Medium-term change -> frontal passages
-    "temperature_tend60", "humidity_tend60", "pressure_tend180",
+    f"temperature_tend{_T_SLOW}", f"humidity_tend{_T_SLOW}",
+    f"pressure_tend{_T_SLOW}",
     # Variability -> stuck sensors (near zero) and erratic readings (high)
-    "temperature_std60", "humidity_std60", "pressure_std360",
-    "temperature_range60", "humidity_range60",
-]
+    f"temperature_std{_ROLL}", f"humidity_std{_ROLL}", f"pressure_std{_ROLL}",
+    f"temperature_range{_ROLL}", f"humidity_range{_ROLL}",
+]))
 
 
 def inject_faults(df: pd.DataFrame, rng: np.random.Generator,
@@ -119,8 +129,20 @@ def inject_faults(df: pd.DataFrame, rng: np.random.Generator,
         d.iloc[i:i + ln, d.columns.get_loc("temperature")] += drop
         if "temperature_bmp" in d.columns:
             d.iloc[i:i + ln, d.columns.get_loc("temperature_bmp")] += drop
-        d.iloc[i:i + ln, d.columns.get_loc("humidity")] = np.clip(
-            d.iloc[i:i + ln, d.columns.get_loc("humidity")] + 18, 0, 100)
+
+        # Humidity rises towards saturation, asymptotically - never by a fixed
+        # amount that then gets clipped at 100.
+        #
+        # The clipped version invalidated the evaluation: Jena's median
+        # humidity is 79 %, so adding a flat 18 points pinned long stretches
+        # to exactly 100. A constant value is precisely the signature the
+        # flatline detector looks for, so Layer 2 reported a hardware fault on
+        # a weather event - the one confusion this architecture exists to
+        # avoid. The benchmark was manufacturing the error it then measured.
+        hcol = d.columns.get_loc("humidity")
+        h = d.iloc[i:i + ln, hcol].to_numpy()
+        d.iloc[i:i + ln, hcol] = h + (100.0 - h) * 0.6
+
         mark(slice(i, i + ln), "frontal")
 
     return d, label, ftype

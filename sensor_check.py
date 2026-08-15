@@ -95,22 +95,53 @@ def detect_range(df: pd.DataFrame) -> pd.Series:
     return flag
 
 
+def median_spacing_minutes(index: pd.DatetimeIndex) -> float:
+    """
+    Typical gap between samples, in minutes.
+
+    Read from the data rather than from config.RESAMPLE, because these checks
+    run on two different resolutions: the 10-minute grid during evaluation,
+    and the raw ~20 s ThingSpeak feed during live operation. The median
+    ignores the occasional long gap left by a paused simulation, which a mean
+    would not.
+    """
+    if len(index) < 2:
+        return float(cfg.STEP_MINUTES)
+    deltas = pd.Series(index).diff().dt.total_seconds().dropna()
+    spacing = float(deltas.median()) / 60.0
+    return spacing if spacing > 0 else float(cfg.STEP_MINUTES)
+
+
+def _samples_for(minutes: float, spacing_min: float) -> int:
+    """Convert a duration into a sample count. Never below 2."""
+    return max(2, int(round(minutes / spacing_min)))
+
+
 def run_checks(df: pd.DataFrame, reference_diff: pd.Series | None = None) -> pd.DataFrame:
     """Run all deterministic checks. Returns a DataFrame of boolean flags."""
     p = cfg.CROSSCHECK
     out = pd.DataFrame(index=df.index)
 
+    # Window sizes come from the actual sample spacing, so the configured
+    # durations hold on the resampled grid and on the raw feed alike.
+    spacing = median_spacing_minutes(df.index)
+    flatline_n = _samples_for(p["flatline_min"], spacing)
+    persistence_n = _samples_for(p["persistence_min"], spacing)
+    out.attrs["spacing_min"] = spacing
+    out.attrs["flatline_samples"] = flatline_n
+    out.attrs["persistence_samples"] = persistence_n
+
     out["range_fault"] = detect_range(df)
 
     for col in ("temperature", "humidity"):
         if col in df.columns:
-            out[f"flatline_{col}"] = detect_flatline(df[col], p["flatline_window"])
+            out[f"flatline_{col}"] = detect_flatline(df[col], flatline_n)
 
     if "temperature_bmp" in df.columns and "temperature" in df.columns:
         cross, thr = detect_crosscheck(
             df["temperature"], df["temperature_bmp"],
             k=p["mad_k"], min_abs=p["min_abs_delta"],
-            persistence=p["persistence"], reference=reference_diff,
+            persistence=persistence_n, reference=reference_diff,
             expected_bmp_offset=p.get("expected_bmp_offset", 0.0))
         out["crosscheck_fault"] = cross
         out.attrs["crosscheck_threshold"] = thr

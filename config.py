@@ -98,24 +98,76 @@ STEP_MINUTES = 10         # must match RESAMPLE
 FORECAST_HORIZON_MIN = 60  # predict temperature 60 minutes ahead
 TARGET = "temperature"
 
+# Time of day and day of year are real model inputs (hour_sin/hour_cos,
+# doy_sin/doy_cos), so training and live data have to agree on what "10:00"
+# means - otherwise the model applies the wrong point of the daily cycle.
+#
+# Jena timestamps are local standard time; ThingSpeak reports UTC. Without
+# this correction the model is told it is 18:30 when it is really 20:30, and
+# in summer that is the steepest part of the evening cooling curve. Measured
+# error: up to 0.52 degC, more than the model's own mean absolute error.
+#
+# 1 = CET. Meteorological series conventionally stay on standard time all
+# year, so this is NOT raised to 2 in summer. If your dataset is in UTC,
+# set it to 0.
+DATASET_UTC_OFFSET_HOURS = 1
+
+# Range actually covered by the training data, as opposed to what the sensors
+# can report. The BMP180 measures down to 300 hPa; the Jena record spans only
+# 913-1015 hPa. A reading outside these bounds is not rejected - it may be
+# perfectly valid at altitude - but the forecast derived from it is an
+# extrapolation, and predict_live.py says so rather than presenting it as an
+# ordinary prediction.
+TRAINING_RANGES = {
+    "temperature": (-23.0, 37.3),
+    "humidity": (12.9, 100.0),
+    "pressure": (913.6, 1015.4),
+}
+
 # --------------------------------------------------------------------------
 # Feature engineering
 # --------------------------------------------------------------------------
+# WINDOW LENGTHS AND THE LIVE SYSTEM ARE COUPLED.
+#
+# The longest window here is how much uninterrupted history predict_live.py
+# needs before it can produce anything. The data source is a Wokwi simulation
+# that only runs while its browser tab has focus, so 24 h of continuous
+# history is not obtainable. Everything is therefore capped at 60 minutes,
+# which the ESP32 delivers in one hour of runtime at its 20 s upload interval.
+#
+# The cost is real and is quantified by train_fallback.py: multi-hour pressure
+# trends, the strongest synoptic predictor available to this sensor set, are
+# no longer visible to the model. This is a deployment constraint, not a
+# modelling choice.
+
 # Lags in minutes: what the value was N minutes ago.
-LAGS_MIN = [10, 30, 60, 180, 360]
+LAGS_MIN = [10, 20, 30, 60]
 
 # Tendencies in minutes: current value minus value N minutes ago.
-# The 180/360 min pressure tendency is the classic synoptic forecast predictor:
-# falling pressure over 3-6 h announces an approaching front.
-TENDENCY_MIN = [10, 60, 180, 360]
+# Pressure tendency is the classic synoptic forecast predictor: falling
+# pressure announces an approaching front. Normally measured over 3-6 h;
+# capped at 60 min here for the reason above.
+TENDENCY_MIN = [10, 30, 60]
 
 # Rolling statistics windows in minutes.
-ROLLING_MIN = [60, 360, 1440]
+ROLLING_MIN = [30, 60]
 
 # Drop absolute pressure levels and keep only altitude-invariant pressure
-# features (anomaly against own 24h mean, tendencies, variability).
-# Set to False only if training data and station are at the same altitude.
+# features (tendencies, variability, and - where a long enough window exists -
+# the anomaly against the station's own daily mean).
+#
+# This matters concretely here: Jena sits at ~155 m and averages ~989 hPa,
+# while the Wokwi BMP180 reports around 1013 hPa. Training on absolute
+# pressure would teach the model that 989 hPa is normal, so it would read
+# every live reading as an extreme high-pressure system.
 ALTITUDE_INVARIANT_PRESSURE = True
+
+# A pressure anomaly against a rolling mean is only meaningful if that mean
+# spans a long enough period. Over 60 minutes pressure barely moves, so the
+# anomaly would be ~0 and the feature dead. Below this threshold features.py
+# drops absolute pressure entirely and relies on tendencies alone, which are
+# altitude-invariant by construction.
+PRESSURE_ANOMALY_MIN_WINDOW = 720  # 12 h
 
 # --------------------------------------------------------------------------
 # Model training
@@ -139,13 +191,37 @@ IFOREST_PARAMS = dict(n_estimators=200, contamination=0.03,
 # --------------------------------------------------------------------------
 # Two independent sensors measure temperature at the same place. A sustained
 # divergence is a hardware fault, not weather.
+# Durations are given in MINUTES, not in samples. Layer 2 runs at two
+# different time resolutions - the 10-minute grid during evaluation, the raw
+# ~20 s feed during live operation - and a sample count would silently mean
+# something different in each: six samples is one hour on the grid and two
+# minutes on the raw feed. Each caller converts minutes into samples using
+# the spacing of the data it actually has.
+#
+# The two windows are tuned independently, because they behave very
+# differently on real data. The cross-check can be fast: two sensors only
+# diverge when one of them is broken, and at 3 minutes it produced zero false
+# alarms across 82,898 clean samples. The flatline check cannot: real weather
+# does hold a value still for an hour - fog, stable nights - so a short window
+# flags the weather rather than the sensor. At 60 minutes it produced 291
+# false alarms, every single false alarm the system had; at 180 minutes, none.
 CROSSCHECK = dict(
-    mad_k=6.0,           # threshold = median + k * MAD of the difference
-    min_abs_delta=2.0,   # never flag below this many degrees (noise floor)
+    mad_k=6.0,             # threshold = median + k * MAD of the difference
+    min_abs_delta=2.0,     # never flag below this many degrees (noise floor)
     expected_bmp_offset=0.35,  # BMP180 temperature is typically this much warmer
-    persistence=6,       # must persist this many samples before flagging
-    flatline_window=18,  # samples with zero variance -> stuck sensor
+    persistence_min=3,     # divergence must last this long before flagging
+    flatline_min=180,      # zero variance for this long -> stuck sensor
 )
+
+# Layer 2 is deterministic - it compares two sensors and needs neither a
+# model nor the training grid. Running it on the raw feed instead of the
+# resampled one makes it react within minutes rather than within an hour,
+# which is what makes a live demonstration possible at all.
+#
+# It also avoids a real loss of information: averaging over 10 minutes halves
+# a step change, so a sensor that jumps 12 K shows up as 5 K and can slip
+# under the threshold entirely.
+CROSSCHECK_ON_RAW_FEED = True
 
 # --------------------------------------------------------------------------
 # ThingSpeak (live inference only - never used for training)

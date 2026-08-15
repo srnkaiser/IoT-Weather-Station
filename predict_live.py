@@ -16,6 +16,7 @@ Configure channel ID, API key and field mapping in config.py.
 from __future__ import annotations
 
 import argparse
+import contextlib
 import json
 import sys
 import time
@@ -29,7 +30,7 @@ import pandas as pd
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import config as cfg
-from data_loader import clean
+from data_loader import VALID_RANGES, clean
 from features import build_features
 from sensor_check import run_checks
 from train_anomaly import ANOMALY_FEATURES
@@ -65,7 +66,12 @@ def fetch_thingspeak(channel_id: str | None = None, read_key: str | None = None,
         raise SystemExit("ThingSpeak returned no data for this channel.")
 
     df = pd.DataFrame(feeds)
-    df.index = pd.to_datetime(df["created_at"], utc=True).dt.tz_convert(None)
+    # ThingSpeak reports UTC; the training data is in the dataset's local
+    # time. Shift before dropping the timezone, so the hour-of-day features
+    # mean the same thing at inference as they did during training.
+    stamps = pd.to_datetime(df["created_at"], utc=True) + \
+        pd.Timedelta(hours=cfg.DATASET_UTC_OFFSET_HOURS)
+    df.index = stamps.dt.tz_localize(None)
     df = df.rename(columns=ts["field_map"])
 
     keep = [c for c in ts["field_map"].values() if c in df.columns]
@@ -82,37 +88,109 @@ def load_csv(path: str) -> pd.DataFrame:
     return df.drop(columns=[tcol]).apply(pd.to_numeric, errors="coerce")
 
 
+def select_forecast_model(df: pd.DataFrame):
+    """
+    Pick the best model the available history can actually feed.
+
+    The main model needs 60 minutes of uninterrupted data. Wokwi rarely
+    delivers that, because the browser pauses the simulation whenever its tab
+    loses focus. The fallback model gets by on a single 10-minute lag and
+    costs only ~0.7 points of skill, so degrading to it beats refusing to
+    predict at all.
+
+    Returns (bundle, feature_row). Raises SystemExit if neither can be fed.
+    """
+    candidates = [cfg.MODEL_DIR / "forecast_model.joblib",
+                  cfg.MODEL_DIR / "forecast_model_fast.joblib"]
+    tried = []
+
+    for path in candidates:
+        if not path.exists():
+            continue
+        bundle = joblib.load(path)
+        # Each bundle records the windows it was trained with, so the live
+        # matrix is rebuilt exactly as the model expects. Falling back to the
+        # config defaults here would silently feed the fast model features
+        # built to the main model's geometry.
+        X = build_features(df,
+                           lags_min=bundle.get("lags_min"),
+                           tendency_min=bundle.get("tendency_min"),
+                           rolling_min=bundle.get("rolling_min"))
+        need = bundle["feature_names"]
+        if any(c not in X.columns for c in need):
+            tried.append(f"{path.name}: feature mismatch, retrain it")
+            continue
+        rows = X[need].dropna()
+        if rows.empty:
+            tried.append(f"{path.name}: needs more history")
+            continue
+        return bundle, rows.iloc[[-1]]
+
+    span = df.index.max() - df.index.min()
+    detail = "\n  ".join(tried) if tried else "no trained model found"
+    raise SystemExit(
+        f"No usable forecast model.\n  {detail}\n\n"
+        f"The feed spans {span} across {len(df)} rows on a {cfg.RESAMPLE} "
+        f"grid. Let the Wokwi simulation run longer - and keep its tab in the "
+        f"foreground, because the browser pauses it otherwise, which turns "
+        f"wall-clock time into gaps.\n"
+        f"If no model exists yet: python3 train_forecast.py && "
+        f"python3 train_fallback.py")
+
+
 def analyse(df: pd.DataFrame) -> dict:
     """Run forecast + both detection layers on the most recent sample."""
-    fc = joblib.load(cfg.MODEL_DIR / "forecast_model.joblib")
     an = joblib.load(cfg.MODEL_DIR / "anomaly_model.joblib")
+
+    # Keep the unresampled feed for Layer 2. The forecast and Layer 1 need
+    # the 10-minute grid their models were trained on, but Layer 2 is a plain
+    # comparison of two sensors and is strictly better off without it:
+    # averaging halves a step change and delays detection by up to an hour.
+    raw = df.copy()
 
     df = clean(df, resample=cfg.RESAMPLE)
     df = df.ffill(limit=3).dropna(subset=["temperature"])
 
-    X = build_features(df)
+    # A quantity that survives cleaning as all-NaN was present in the feed but
+    # implausible throughout - in the simulator that means a slider parked
+    # outside the physical range (VALID_RANGES in data_loader.py). Without
+    # this check the run fails later as "not enough history", which sends you
+    # looking for the problem in entirely the wrong place.
+    for col in cfg.BASE_COLUMNS:
+        if col in df.columns and df[col].isna().all():
+            lo, hi = VALID_RANGES[col]
+            raise SystemExit(
+                f"Every '{col}' reading was rejected as implausible "
+                f"(valid range {lo} to {hi}). Check the {col} slider in Wokwi "
+                f"- it is set outside that range.")
 
     # --- Forecast ----------------------------------------------------------
-    need = fc["feature_names"]
-    missing = [c for c in need if c not in X.columns]
-    if missing:
-        raise SystemExit(
-            f"Feature mismatch: the model expects {missing} but the live data "
-            f"cannot produce them. Retrain with the same config.")
-
-    Xf = X[need].dropna()
-    if Xf.empty:
-        raise SystemExit(
-            f"Not enough history. The features need about "
-            f"{max(cfg.ROLLING_MIN) // 60} h of continuous data; "
-            f"ThingSpeak currently provides less.")
-
-    last = Xf.iloc[[-1]]
+    fc, last = select_forecast_model(df)
     forecast = float(fc["model"].predict(last)[0])
     now_t = float(df["temperature"].iloc[-1])
 
+    # A reading inside the sensor's operating range can still lie outside
+    # anything the model was trained on. The BMP180 reads down to 300 hPa;
+    # the training data spans 913-1015 hPa. Below that the model extrapolates
+    # and returns a confident number with no basis - it has no notion of
+    # having left familiar territory. Saying so is the difference between a
+    # forecast that looks broken and one that explains itself.
+    extrapolating = [
+        f"{col} {float(df[col].iloc[-1]):.1f} outside training range "
+        f"{lo:.0f}-{hi:.0f}"
+        for col, (lo, hi) in cfg.TRAINING_RANGES.items()
+        if col in df.columns and not lo <= float(df[col].iloc[-1]) <= hi
+    ]
+
     # --- Layer 1 -----------------------------------------------------------
-    Xa = X[ANOMALY_FEATURES].dropna()
+    # Built separately from the forecast matrix: the anomaly features are
+    # pinned to the config windows the detector was fitted on, which are not
+    # necessarily the ones the selected forecast model uses.
+    X = build_features(df)
+    if any(c not in X.columns for c in ANOMALY_FEATURES):
+        Xa = X.iloc[0:0]
+    else:
+        Xa = X[ANOMALY_FEATURES].dropna()
     if len(Xa):
         a_last = Xa.iloc[[-1]]
         l1_flag = bool(an["model"].predict(a_last)[0] == -1)
@@ -121,10 +199,13 @@ def analyse(df: pd.DataFrame) -> dict:
         l1_flag, l1_score = False, float("nan")
 
     # --- Layer 2 -----------------------------------------------------------
-    flags = run_checks(df)
+    l2_source = raw if cfg.CROSSCHECK_ON_RAW_FEED else df
+    flags = run_checks(l2_source)
     l2 = flags.iloc[-1]
     l2_flag = bool(l2["sensor_fault"])
     l2_detail = [k for k, v in l2.items() if v and k != "sensor_fault"]
+    l2_spacing = flags.attrs.get("spacing_min", cfg.STEP_MINUTES)
+    l2_reaction = round(l2_spacing * flags.attrs.get("persistence_samples", 0), 1)
 
     # --- Interpretation ----------------------------------------------------
     if l2_flag:
@@ -149,6 +230,8 @@ def analyse(df: pd.DataFrame) -> dict:
         "anomaly_score": round(l1_score, 4),
         "sensor_fault_flag": int(l2_flag),
         "sensor_fault_detail": l2_detail,
+        "sensor_check_reaction_min": l2_reaction,
+        "extrapolating": extrapolating,
         "verdict": verdict,
     }
 
@@ -169,24 +252,65 @@ def report(res: dict) -> None:
     print(f"  Layer 1 anomaly     {'YES' if res['anomaly_flag'] else 'no':<5} "
           f"(score {res['anomaly_score']})")
     print(f"  Layer 2 sensor fault {'YES' if res['sensor_fault_flag'] else 'no':<5} "
-          f"{res['sensor_fault_detail'] if res['sensor_fault_detail'] else ''}")
+          f"{res['sensor_fault_detail'] if res['sensor_fault_detail'] else ''}"
+          f"  (reacts after {res['sensor_check_reaction_min']} min)")
+    if res.get("extrapolating"):
+        print("-" * 58)
+        for note in res["extrapolating"]:
+            print(f"  [warn] {note}")
+        print("  Forecast is an extrapolation and is not supported by the "
+              "training data.")
     print(f"\n  >> {res['verdict']}")
     print("=" * 58)
 
 
-def push_thingspeak(res: dict) -> None:
-    """Optional: write results back to a second ThingSpeak channel."""
-    key = cfg.THINGSPEAK.get("write_api_key", "")
-    if not key:
+def push_thingspeak(res: dict, dry_run: bool = False) -> None:
+    """
+    Write results to the prediction channel, so the mobile app can read them.
+
+    Driven by THINGSPEAK["write_channel_fields"] rather than a fixed field
+    list: the mapping is what the app is built against, and having it declared
+    in one place means the config and the actual upload cannot drift apart.
+    """
+    ts = cfg.THINGSPEAK
+    key = ts.get("write_api_key", "")
+    if dry_run:
+        print("  [dry-run] nothing written to ThingSpeak")
         return
+    if not key:
+        print("  [info] no write key configured - result not pushed")
+        return
+
     import requests
-    payload = {"api_key": key,
-               "field1": res["forecast_temperature"],
-               "field2": res["anomaly_flag"],
-               "field3": res["sensor_fault_flag"]}
+
+    payload = {"api_key": key}
+    skipped = []
+    for field, result_key in ts["write_channel_fields"].items():
+        value = res.get(result_key)
+        # NaN has to be filtered out explicitly: anomaly_score is NaN whenever
+        # Layer 1 had too little history, and ThingSpeak stores the literal
+        # string "nan", which then breaks the app's number parsing.
+        if value is None or (isinstance(value, float) and np.isnan(value)):
+            skipped.append(result_key)
+            continue
+        payload[field] = value
+    if skipped:
+        print(f"  [warn] no value, field left empty: {skipped}")
+
     try:
-        r = requests.post("https://api.thingspeak.com/update", data=payload, timeout=15)
-        print(f"  Pushed to ThingSpeak (entry {r.text})")
+        r = requests.post("https://api.thingspeak.com/update", data=payload,
+                          timeout=15)
+        entry = r.text.strip()
+        # ThingSpeak answers with the new entry id, or a plain "0" when the
+        # write was rejected - almost always the free tier's 15 s per-channel
+        # rate limit. It returns HTTP 200 either way, so the body is the only
+        # way to tell success from failure.
+        if entry == "0":
+            print("  [warn] ThingSpeak rejected the write (entry 0). Usually "
+                  "the 15 s rate limit - increase --watch.")
+        else:
+            print(f"  Pushed to channel {ts.get('write_channel_id', '?')} "
+                  f"(entry {entry})")
     except Exception as e:
         print(f"  [warn] push failed: {e}")
 
@@ -199,17 +323,27 @@ def main():
     ap.add_argument("--watch", type=int, default=0,
                     help="repeat every N seconds")
     ap.add_argument("--json", action="store_true", help="print JSON only")
+    ap.add_argument("--no-push", action="store_true",
+                    help="analyse only, write nothing to ThingSpeak")
     args = ap.parse_args()
 
     def once():
-        df = load_csv(args.csv) if args.csv else \
-            fetch_thingspeak(args.channel, args.key)
-        res = analyse(df)
+        # With --json, stdout has to carry the JSON document and nothing
+        # else. The loading and cleaning steps print progress as they go, so
+        # that chatter is redirected to stderr for the duration - otherwise
+        # it lands in front of the document and every parser chokes on it.
+        # stderr stays visible, so problems are still reported.
+        stream = sys.stderr if args.json else sys.stdout
+        with contextlib.redirect_stdout(stream):
+            df = load_csv(args.csv) if args.csv else \
+                fetch_thingspeak(args.channel, args.key)
+            res = analyse(df)
+            if not args.json:
+                report(res)
+            push_thingspeak(res, dry_run=args.no_push)
+
         if args.json:
             print(json.dumps(res, indent=2))
-        else:
-            report(res)
-        push_thingspeak(res)
         return res
 
     if args.watch:

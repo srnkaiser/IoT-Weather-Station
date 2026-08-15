@@ -101,22 +101,49 @@ You can then start the forecast:
 
 ```bash
 python3 predict_live.py              # one-time run
-python3 predict_live.py --watch 300  # every 5 minutes
+python3 predict_live.py --watch 120  # every 2 minutes
 python3 predict_live.py --json       # JSON output
+python3 predict_live.py --no-push    # analyse without writing to ThingSpeak
 ```
 
-Feature calculation requires approximately 24 hours of uninterrupted measurements. For a shorter test period, reduce `ROLLING_MIN` in `config.py`.
+Feature calculation requires 60 minutes of uninterrupted measurements. If less
+history is available, `predict_live.py` automatically falls back to a
+short-memory model that needs about 20 minutes and costs 0.7 percentage points
+of forecast skill.
+
+Keep the Wokwi browser tab in the foreground while collecting data. Browsers
+suspend timers in background tabs, which pauses the simulation and leaves gaps
+in the history.
+
+## Verifying the system
+
+```bash
+python3 make_demo_scenarios.py   # seven end-to-end tests, no simulator needed
+python3 explain_model.py         # how the forecast responds to each input
+```
+
+`make_demo_scenarios.py` builds test cases from real weather data with specific
+faults injected and checks that the pipeline reaches the expected verdict for
+each. It runs in seconds and requires neither Wokwi nor ThingSpeak.
 
 ## Project structure
 
 ```text
-config.py              Central configuration
+config.py               Central configuration
 run_all.sh              Full training pipeline
-data/                   Training data
+data/                   Training data (downloaded, not in the repository)
 models/                 Trained models
 results/                Metrics and plots
+data_loader.py          Loading, cleaning, unified schema
+features.py             Feature engineering
 train_forecast.py       Temperature-forecast training
-train_anomaly.py        Anomaly-detection training
-sensor_check.py         Temperature-sensor comparison
+train_fallback.py       Short-memory model for limited history
+train_anomaly.py        Anomaly-detection training (Layer 1)
+sensor_check.py         Temperature-sensor comparison (Layer 2)
+evaluate_combined.py    Combined evaluation of both layers
+tune_contamination.py   Sensitivity analysis of the anomaly threshold
+explain_model.py        Model response analysis
+make_demo_scenarios.py  End-to-end verification
 predict_live.py         Fetch and evaluate ThingSpeak data
+Weather_Station_App.aia MIT App Inventor project
 ```

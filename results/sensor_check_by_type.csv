@@ -1,7 +1,7 @@
 FaultType,n_samples,Recall
 spike,12.0,0.0
 stuck,167.0,0.491
-drift,637.0,0.5699
+drift,637.0,0.5903
 dropout,213.0,0.8263
-frontal,227.0,0.2863
+frontal,227.0,0.0
 clean,82898.0,0.0

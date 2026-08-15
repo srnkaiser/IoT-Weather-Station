@@ -1,20 +1,36 @@
 #!/usr/bin/env bash
-# Full pipeline. Run from the project root.
-set -euo pipefail
+# Full training and evaluation pipeline. Run from the project root:
+#   ./run_all.sh
+#
+# All scripts live in the project root, not in src/ - the paths in the README
+# tree are aspirational. Live inference (predict_live.py) is NOT part of this;
+# it runs separately once the models exist.
+set -e
 
-# Resolve paths from this file so the script can also be run elsewhere.
-PROJECT_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
-PYTHON="${PYTHON:-python3}"
+DATASET=$(python3 -c "import config; print(config.DATASET)")
+echo "Dataset: $DATASET"
+echo
 
-# Prefer the project's virtual environment when it exists.
-if [[ -x "$PROJECT_ROOT/.venv/bin/python" ]]; then
-    PYTHON="$PROJECT_ROOT/.venv/bin/python"
+if [ "$DATASET" = "synthetic" ]; then
+  echo "[0/4] Generating synthetic test data ..."
+  python3 make_testdata.py
+  echo
 fi
 
-echo "[1/5] Generating test data ..."      && "$PYTHON" "$PROJECT_ROOT/make_testdata.py"
-echo "[2/5] Training forecast model ..."   && "$PYTHON" "$PROJECT_ROOT/train_forecast.py"
-echo "[3/5] Training anomaly model ..."    && "$PYTHON" "$PROJECT_ROOT/train_anomaly.py"
-echo "[4/5] Evaluating sensor checks ..."  && "$PYTHON" "$PROJECT_ROOT/sensor_check.py"
-echo "[5/5] Combined evaluation ..."       && "$PYTHON" "$PROJECT_ROOT/evaluate_combined.py"
+echo "[1/6] Training forecast model ..."   && python3 train_forecast.py
+echo
+echo "[2/6] Training fallback model ..."   && python3 train_fallback.py
+echo
+echo "[3/6] Training anomaly model ..."    && python3 train_anomaly.py
+echo
+echo "[4/6] Evaluating sensor checks ..."  && python3 sensor_check.py
+echo
+echo "[5/6] Combined evaluation ..."       && python3 evaluate_combined.py
+echo
+echo "[6/6] Contamination sensitivity ..." && python3 tune_contamination.py
 echo
 echo "Done. Results in results/, models in models/."
+echo
+echo "Live inference:"
+echo "  python3 predict_live.py              # once"
+echo "  python3 predict_live.py --watch 300  # every 5 minutes"

@@ -1,7 +1,7 @@
 FaultType,Class,n,Layer1,Layer2,Fused
 spike,sensor fault,12,1.0,0.0,1.0
 stuck,sensor fault,167,0.012,0.491,0.491
-drift,sensor fault,637,0.013,0.57,0.582
-dropout,sensor fault,213,0.324,0.826,0.925
-frontal,environmental,227,0.626,0.286,0.744
-clean,-,82423,0.0295,0.0,0.0295
+drift,sensor fault,637,0.011,0.59,0.601
+dropout,sensor fault,213,0.329,0.826,0.925
+frontal,environmental,227,0.388,0.0,0.388
+clean,-,82447,0.03,0.0,0.03

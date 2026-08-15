@@ -80,15 +80,23 @@ def build_features(df: pd.DataFrame,
             X[f"{c}_range{m}"] = r.max() - r.min()
 
     # --- Altitude-invariant pressure --------------------------------------
-    # Absolute pressure depends on station altitude. Jena sits at ~155 m, our
-    # station will not. A model trained on absolute hPa would carry that
-    # offset as a learned bias and misread every value at deployment.
-    # Replace the absolute level by the anomaly against its own 24 h mean.
-    # Tendencies and standard deviations are already differences and
-    # therefore altitude-invariant by construction.
+    # Absolute pressure depends on station altitude. Jena sits at ~155 m and
+    # averages ~996 hPa; the Wokwi BMP180 reports around 1013 hPa. A model
+    # trained on absolute hPa would carry that 17 hPa offset as a learned bias
+    # and read every live value as an extreme high-pressure system.
+    #
+    # The usual replacement is the anomaly against the station's own daily
+    # mean. That needs a rolling window of at least PRESSURE_ANOMALY_MIN_WINDOW
+    # minutes - over a short window pressure barely moves, so the anomaly
+    # collapses to ~0 and the feature is dead weight that still costs the model
+    # a split. When no such window is configured we drop absolute pressure
+    # outright and rely on tendencies and variability, which are differences
+    # and therefore altitude-invariant by construction.
     if "pressure" in cols and cfg.ALTITUDE_INVARIANT_PRESSURE:
-        ref = X["pressure_mean1440"] if "pressure_mean1440" in X else X["pressure"]
-        X["pressure_anom"] = X["pressure"] - ref
+        long_windows = [m for m in rolling_min
+                        if m >= cfg.PRESSURE_ANOMALY_MIN_WINDOW]
+        if long_windows:
+            X["pressure_anom"] = X["pressure"] - X[f"pressure_mean{max(long_windows)}"]
         drop = [c for c in X.columns
                 if c.startswith("pressure")
                 and ("lag" in c or "mean" in c or c == "pressure")]
@@ -99,8 +107,12 @@ def build_features(df: pd.DataFrame,
         dp = magnus_dewpoint(df["temperature"].to_numpy(), df["humidity"].to_numpy())
         X["dewpoint"] = dp
         X["dewpoint_spread"] = df["temperature"].to_numpy() - dp
-        X["dewpoint_tend180"] = X["dewpoint"] - X["dewpoint"].shift(
-            _steps(180, step_minutes))
+        # Tied to the configured tendency windows. Hard-coding a longer span
+        # here would silently raise the amount of history the live system
+        # needs, no matter what TENDENCY_MIN says.
+        dp_tend = max(tendency_min)
+        X[f"dewpoint_tend{dp_tend}"] = X["dewpoint"] - X["dewpoint"].shift(
+            _steps(dp_tend, step_minutes))
 
     # Cyclic time encoding: 23:50 and 00:00 must be neighbours, not extremes.
     idx = df.index
