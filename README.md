@@ -126,6 +126,33 @@ python3 explain_model.py         # how the forecast responds to each input
 faults injected and checks that the pipeline reaches the expected verdict for
 each. It runs in seconds and requires neither Wokwi nor ThingSpeak.
 
+## Demonstrating it live
+
+Three things to know before moving a slider in Wokwi, otherwise the system
+looks unresponsive when it is working correctly:
+
+- **The prediction channel only updates while `predict_live.py` is running.**
+  The measurement channel updates by itself; the prediction channel does not.
+  Run `python3 predict_live.py --watch 60 --no-push` to see results locally.
+- **A slider change takes up to 10 minutes to take full effect**, because
+  readings are averaged onto a 10-minute grid. Layer 2 is the exception and
+  reacts in 3 minutes.
+- **Move sliders slowly and keep the Wokwi tab in the foreground.** Rapid
+  changes produce rates that do not occur in real weather, so the model
+  correctly reports an anomaly instead of a useful forecast. Background tabs
+  are suspended by the browser, which pauses the simulation.
+
+| Step | Action | Expected |
+|---|---|---|
+| 0 | 20 °C / 60 % / 1013 hPa, both temperature sliders equal, wait 10 min | `NORMAL` |
+| 1 | raise pressure slowly to 1019 hPa | forecast drops ~1.4 °C |
+| 2 | jump temperature by 14 °C at once, both sensors | `ENVIRONMENTAL ANOMALY` |
+| 3 | move only the DHT22 slider, wait 3 min | `HARDWARE FAULT` |
+
+Step 3 is the core of the architecture: weather affects both sensors, a defect
+affects one. The forecast keeps being computed during a fault — the flag, not
+the absence of a number, carries the information.
+
 ## Project structure
 
 ```text
