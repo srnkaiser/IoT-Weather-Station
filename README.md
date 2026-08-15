@@ -118,13 +118,18 @@ in the history.
 ## Verifying the system
 
 ```bash
-python3 make_demo_scenarios.py   # seven end-to-end tests, no simulator needed
-python3 explain_model.py         # how the forecast responds to each input
+python3 predict_live.py --no-push   # live forecast, works straight after cloning
+python3 make_demo_scenarios.py      # seven end-to-end tests
+python3 explain_model.py            # how the forecast responds to each input
 ```
 
-`make_demo_scenarios.py` builds test cases from real weather data with specific
-faults injected and checks that the pipeline reaches the expected verdict for
-each. It runs in seconds and requires neither Wokwi nor ThingSpeak.
+The first command needs nothing but the repository — the trained models are
+included. The other two build their cases from the training data, so download
+it first (see *Training data* above).
+
+`make_demo_scenarios.py` injects specific faults into real weather data and
+checks that the pipeline reaches the expected verdict for each. It runs in
+seconds and needs neither Wokwi nor ThingSpeak.
 
 ## Demonstrating it live
 
