@@ -1,0 +1,11 @@
+{
+  "MAE": 0.5421,
+  "RMSE": 0.7775,
+  "R2": 0.9908,
+  "Skill_vs_Persistence_%": 24.78,
+  "persistence_MAE": 0.7207,
+  "seq_minutes": 720,
+  "parameters": 43138,
+  "train_seconds": 753.7,
+  "test_samples": 83971
+}
