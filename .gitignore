@@ -28,3 +28,6 @@ venv/
 
 # IDE
 .vscode/
+
+# TensorFlow virtual environment
+.venv-tf/
