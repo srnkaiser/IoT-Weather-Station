@@ -1,0 +1,22 @@
+{
+  "MAE": 0.4502,
+  "RMSE": 0.6507,
+  "R2": 0.9935,
+  "Skill_vs_Persistence_%": 37.53,
+  "persistence_MAE": 0.7207,
+  "seq_minutes": 60,
+  "parameters": 119170,
+  "train_seconds": 1481.3,
+  "test_samples": 84034,
+  "learning_rate": 0.0003,
+  "units": 96,
+  "patience": 12,
+  "reduce_lr_on_plateau": true,
+  "calendar_channels": false,
+  "engineered_features": true,
+  "n_channels": 42,
+  "seed": 42,
+  "architecture": "attention_bilstm",
+  "attention": true,
+  "bidirectional": true
+}

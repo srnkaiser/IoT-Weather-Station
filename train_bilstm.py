@@ -215,8 +215,14 @@ def main():
 
     # Without this the weight initialisation differs on every run, so two
     # results cannot be compared at all - a 0.004 degC difference would be
-    # indistinguishable from noise. Seeded, a repeat run reproduces exactly,
-    # and varying the seed on purpose measures the spread.
+    # indistinguishable from noise. Varying the seed on purpose then measures
+    # the spread, which is the only honest way to compare configurations here.
+    #
+    # This does NOT make a run bit-reproducible: TensorFlow reduces across CPU
+    # threads in whatever order they finish, and enable_op_determinism() is
+    # not set because it costs throughput. Repeat runs agree to roughly 1e-4,
+    # two orders of magnitude below the differences being measured, so the
+    # conclusions hold - but do not claim exact reproducibility.
     keras.utils.set_random_seed(args.seed)
 
     seq_len = max(2, args.seq_minutes // cfg.STEP_MINUTES)

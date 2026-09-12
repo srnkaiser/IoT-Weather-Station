@@ -1,8 +1,11 @@
 architecture,seq_minutes,inputs,units,lr,n_seeds,MAE_mean,MAE_min,MAE_max,MAE_std,parameters,train_s,spread
-bilstm,60,raw+calendar,96,0.0003,1,0.4721,0.4721,0.4721,,86081,1328.0,0.0
-lstm,60,raw+calendar,96,0.0003,1,0.4735,0.4735,0.4735,,43073,617.0,0.0
+attention_bilstm,60,engineered,96,0.0003,3,0.4511,0.4469,0.4563,0.0048,119170,1952.0,0.0094
+attention_bilstm,20,engineered,96,0.0003,1,0.4515,0.4515,0.4515,,119170,742.0,0.0
+bilstm,60,raw+calendar,96,0.0003,4,0.4718,0.4705,0.4733,0.0012,86081,2194.0,0.0028
+lstm,60,raw+calendar,96,0.0003,4,0.4727,0.4688,0.4761,0.003,43073,1432.0,0.0073
 attention_lstm,60,raw+calendar,96,0.0003,1,0.4796,0.4796,0.4796,,46210,705.0,0.0
-attention_bilstm,60,raw+calendar,96,0.0003,2,0.4855,0.4812,0.4897,0.006,92290,936.0,0.0085
+attention_bilstm,720,raw+calendar,96,0.0003,1,0.4848,0.4848,0.4848,,92290,7414.0,0.0
+attention_bilstm,60,raw+calendar,96,0.0003,5,0.4853,0.4801,0.4897,0.0044,92290,1924.0,0.0096
 attention_bilstm,60,raw,96,0.0003,2,0.5376,0.5372,0.5381,0.0006,89218,833.0,0.0009
 attention_bilstm,60,raw,64,0.001,1,0.5385,0.5385,0.5385,,43138,201.0,0.0
 attention_bilstm,720,raw,64,0.001,1,0.5421,0.5421,0.5421,,43138,754.0,0.0

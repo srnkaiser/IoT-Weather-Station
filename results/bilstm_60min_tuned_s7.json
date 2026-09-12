@@ -1,0 +1,18 @@
+{
+  "MAE": 0.5372,
+  "RMSE": 0.7867,
+  "R2": 0.9906,
+  "Skill_vs_Persistence_%": 25.45,
+  "persistence_MAE": 0.7206,
+  "seq_minutes": 60,
+  "parameters": 89218,
+  "train_seconds": 810.8,
+  "test_samples": 84037,
+  "learning_rate": 0.0003,
+  "units": 96,
+  "patience": 12,
+  "reduce_lr_on_plateau": true,
+  "calendar_channels": false,
+  "n_channels": 3,
+  "seed": 7
+}

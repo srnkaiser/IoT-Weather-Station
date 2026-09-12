@@ -476,25 +476,37 @@ def make_plots():
                          .replace("_", " ").replace("60min", "60 min")
                          .replace("720min", "12 h"))
 
-    # 1) Accuracy, with persistence drawn as the line everything is measured
-    #    against rather than as another bar - it is the reference, not a rival.
-    fig, ax = plt.subplots(figsize=(9, 4.6))
-    body = table[table.model != "persistence"]
+    # 1) Accuracy. A dot plot on a truncated axis rather than bars from zero:
+    #    every model sits between 0.45 and 0.54, so bars from zero render the
+    #    entire result as eleven near-identical rectangles. Dots carry no area,
+    #    so shortening the axis does not exaggerate anything - which is exactly
+    #    the objection that rules a truncated bar chart out.
+    fig, ax = plt.subplots(figsize=(9.5, 5.2))
+    body = table[table.model != "persistence"].sort_values("MAE",
+                                                           ascending=False)
     base = float(table.loc[table.model == "persistence", "MAE"].iloc[0])
-    colors = ["#264653" if m == "baseline_gradientboosting" else "#e76f51"
-              for m in body.model]
-    ax.bar([label(m) for m in body.model], body.MAE, color=colors, width=0.62)
-    ax.axhline(base, color="#999", ls="--", lw=1.4)
-    ax.text(len(body) - 0.45, base, f" persistence {base:.3f}", va="bottom",
-            ha="right", color="#777", fontsize=9)
+    gb = float(table.loc[table.model == "baseline_gradientboosting",
+                         "MAE"].iloc[0]) if "baseline_gradientboosting" \
+        in set(table.model) else None
+    y = np.arange(len(body))
     for i, (m, v) in enumerate(zip(body.model, body.MAE)):
-        ax.text(i, v + 0.006, f"{v:.4f}", ha="center", fontsize=9)
-    ax.set_ylabel("MAE (degC)")
-    ax.set_ylim(0, base * 1.12)
-    ax.set_title(f"Temperature forecast {cfg.FORECAST_HORIZON_MIN} min ahead - "
-                 "identical test samples, identical split")
-    ax.grid(axis="y", alpha=0.25)
-    plt.setp(ax.get_xticklabels(), fontsize=8.5)
+        is_base = m == "baseline_gradientboosting"
+        c = "#264653" if is_base else ("#2a9d8f" if gb and v < gb else "#e76f51")
+        ax.hlines(i, min(v, gb or v), max(v, gb or v), color=c, alpha=0.25, lw=2)
+        ax.plot(v, i, "o", ms=9, color=c)
+        ax.text(v + 0.0016, i, f"{v:.4f}", va="center", fontsize=8.5, color=c)
+    if gb:
+        ax.axvline(gb, color="#264653", ls="--", lw=1.3, alpha=0.8)
+    ax.set_yticks(y)
+    ax.set_yticklabels([label(m).replace("\n", " ") for m in body.model],
+                       fontsize=9)
+    ax.set_xlabel("MAE (degC) - lower is better")
+    ax.set_xlim(body.MAE.min() - 0.006, body.MAE.max() + 0.010)
+    ax.set_title("Temperature forecast 60 min ahead\n"
+                 f"identical test samples, identical split "
+                 f"(persistence baseline: {base:.3f} degC)", fontsize=11)
+    ax.grid(axis="x", alpha=0.25)
+    ax.spines[["top", "right"]].set_visible(False)
     fig.tight_layout()
     fig.savefig(cfg.RESULTS_DIR / "model_comparison.png", dpi=150)
     plt.close(fig)

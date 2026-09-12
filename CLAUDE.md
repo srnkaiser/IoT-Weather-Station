@@ -72,10 +72,11 @@ training. Reproduce with `./run_all.sh`.
   in the current state and the short-term tendency. If the BiLSTM does not
   beat 0.463 °C, that is a reportable result, not a bug — but it must be
   explained rather than tuned away.
-  **Settled, September 2026:** it does not beat it, the gap is 0.026 °C once
-  the inputs are matched, and the explanation is measured rather than
-  asserted — see the results section above. `train_lstm.py` said the same
-  thing in the original project, before any of it was run.
+  **Settled, September 2026, and the expectation was wrong.** On raw
+  channels the sequence model loses badly, as predicted. On the *same
+  engineered features* it wins: 0.4511 against 0.4633. The signal the trees
+  exploit is in the features, and a sequence model given those features
+  extracts more of it, not less — see the results section above.
 - **The two-layer anomaly architecture works and is measured.** Layer 2
   reaches precision 1.000 with zero false alarms across 82,447 clean
   samples; detected events are classified correctly as weather in 100 % of
@@ -89,86 +90,83 @@ training. Reproduce with `./run_all.sh`.
 
 ## Measured results of the BiLSTM work (September 2026)
 
-Everything below is reproduced by `compare_models.py`; numbers live in
-`results/model_comparison.md`. Do not re-derive them.
+22 training runs. Full narrative in `results/bilstm_comparison.md`, numbers in
+`results/model_comparison.md` and `results/runs_by_configuration.md`.
+Reproduce everything with `./run_bilstm.sh`. Do not re-derive these.
+
+### The result, in one line
+
+A sequence model beats the baseline, but only on the engineered features.
+
+| Model | Inputs | MAE | Skill | Runs |
+|---|---|---|---|---|
+| **Attention-BiLSTM** | **engineered features** | **0.4511** | +37.4 % | 3 |
+| Gradient Boosting | engineered features | 0.4633 | +35.7 % | 1 |
+| BiLSTM, no attention | raw + calendar | 0.4718 | +34.5 % | 4 |
+| Plain LSTM | raw + calendar | 0.4727 | +34.4 % | 4 |
+| Attention-BiLSTM | raw + calendar | 0.4853 | +32.6 % | 5 |
+| Attention-BiLSTM | raw only | 0.5376 | +25.4 % | 2 |
+
+State it as "all three runs beat the baseline, by 0.007 to 0.016 degC", not as
+the mean alone: the seed spread of that configuration (0.0094) is close to the
+gap (0.0122). Significance uses the **median** seed, never the best:
+DM +5.94, p = 2.9e-9, CI [+0.0090, +0.0176], HAC-corrected, stable across HAC
+windows and across all eleven regimes tested.
 
 ### How to run the comparison
 
 The baseline was fitted under sklearn 1.4 and the sequence models need
-TensorFlow, whose environment carries sklearn 1.9, so the two cannot be
-loaded in one process. Predictions are exported separately, then analysed:
+TensorFlow, whose environment carries sklearn 1.9, so the two cannot be loaded
+in one process. Predictions are exported separately, then analysed:
 
 ```bash
 python3 compare_models.py --export-baseline
-.venv-tf/bin/python compare_models.py --export-bilstm 60min_calendar
-python3 compare_models.py --analyse
+.venv-tf/bin/python compare_models.py --export-bilstm 60min_features
+python3 compare_models.py --analyse     # aligned comparison + significance
+python3 compare_models.py --summary     # every run, grouped, with seed spread
 python3 compare_models.py --plots
 ```
 
-### The headline
+### Six things learned the hard way
 
-On the **same 83,959 forecasts**, aligned on target timestamp:
+1. **Match the inputs before comparing.** The baseline gets four calendar
+   features the raw sequence does not. Withholding them cost 0.048 degC and
+   produced a first conclusion ("the architecture does not work") that was
+   simply wrong. Supplying the full engineered set via `--features` reversed
+   the result outright.
 
-| Model | MAE (°C) | Skill | vs. baseline |
-|---|---|---|---|
-| **Gradient Boosting** | **0.4632** | +35.71 % | — |
-| Attention-BiLSTM, 60 min, with calendar features | 0.4896 | +32.05 % | +0.0264 |
-| Attention-BiLSTM, 60 min, tuned | 0.5378 | +25.36 % | +0.0746 |
-| Attention-BiLSTM, 12 h | 0.5419 | +24.79 % | +0.0787 |
-| Persistence | 0.7205 | — | — |
+2. **Hyperparameter tuning is not where anything is.** Learning rate 3e-4,
+   96 units, patience 12, ReduceLROnPlateau: 0.5385 to 0.5381. Do not spend
+   time here.
 
-(The BiLSTM row is one seed; see point 3 below — the seed-to-seed spread of
-that configuration is large enough that a mean over five runs is the number
-to quote. Updated once those runs finish.)
+3. **Two seeds are not enough to know the spread.** Measured twice in this
+   project, wrongly both times. Without calendar features the spread is 0.001;
+   with them 0.0094; the stronger configuration is the less stable one. Run
+   four or five, quote the range, and let `--summary` mark gaps smaller than
+   the spread as unresolved.
 
-The remaining gap of 0.026 °C is statistically significant
-(Diebold-Mariano +9.21, p ≈ 3e-20, 95 % CI [+0.021, +0.033]) and the verdict
-does not depend on the HAC window. It is also small: 5.7 % relative.
+4. **Neither half of "Attention-BiLSTM" earns its place.** Attention costs
+   0.0135 degC. Bidirectionality doubles parameters for a difference inside
+   the noise. The plain LSTM matches everything with 43,073 parameters against
+   92,290 - and is more stable across seeds.
 
-### Four things that were learned the hard way
+5. **The model itself says long history is useless.** Given 12 hours it puts
+   73 % of its attention on the last 60 minutes. Accuracy agrees: 12 h vs
+   60 min differs by 0.0007. A 2-step window (70 min lookback) matches a
+   6-step one (0.4515 vs 0.4511, p = 0.26).
 
-1. **The comparison was not like-for-like.** The baseline gets four calendar
-   features (`hour_sin/cos`, `doy_sin/cos`); the BiLSTM was given three raw
-   channels. Adding them via `--calendar` is worth **0.048 °C** — more than
-   every hyperparameter change combined. Always pass `--calendar`. A BiLSTM
-   result without it understates the architecture by roughly 7 percentage
-   points of skill.
+6. **Condition on the past, never on the future.** The volatility breakdown
+   first used `|y - persistence|`, which is the persistence error itself and
+   hands persistence the calm group by construction. It must be the
+   temperature change over the hour *before* the forecast is issued.
 
-2. **Hyperparameter tuning is not where the gap is.** Lowering the learning
-   rate to 3e-4, widening to 96 units, patience 12 and ReduceLROnPlateau
-   together moved MAE from 0.5385 to 0.5381. Four ten-thousandths. Do not
-   spend time here.
+### Reproducibility, precisely
 
-3. **Run-to-run spread depends on the configuration, and two seeds are not
-   enough to know it.** Without calendar features, seeds 42 and 7 give 0.5381
-   and 0.5372 — a spread of 0.001 °C. *With* them the same pair gives 0.4897
-   and 0.4812, a spread of **0.0085 °C**, nine times larger and about a third
-   of the gap being reported. The stronger configuration is the less stable
-   one. Quote a mean over five seeds for the calendar configuration, never a
-   single run. Individual runs are exactly reproducible via `--seed`.
-
-4. **The attention layer says the long history is unused.** Given 72
-   timesteps (12 h), the model puts **73 % of its attention on the last
-   60 minutes** and 59 % on the last 10. It discards eleven of the twelve
-   hours it was handed. This is the mechanistic explanation for why the 12-hour
-   variant does not beat the 60-minute one, and it is a result in its own
-   right — see `results/attention_weights.png`.
-
-### The ranking holds everywhere
-
-Broken down by season (4), time of day (4) and pre-forecast volatility (3),
-Gradient Boosting wins all eleven regimes. There is no regime where the
-sequence model takes the lead, so the average is not hiding a reversal. The
-gap is narrowest in volatile conditions (+4.1 % relative) and widest in calm
-ones (+9.3 %).
-
-### A trap in the regime analysis
-
-Volatility must be measured over the hour **before** the forecast is issued.
-Using `|y - persistence|` looks equivalent and is not: that is the future
-change, i.e. the persistence error itself, so conditioning on it hands
-persistence the calm group by construction. It is also unavailable in
-operation. This was written wrongly once and corrected.
+Runs are seeded (`--seed`) and reproduce to about 1e-4, not bit-exactly:
+`enable_op_determinism()` is deliberately not set. That is two orders of
+magnitude below the differences measured. **Training durations are not
+comparable** - the runs were executed several at a time and the timings
+reflect contention. Quote the ordering, never the seconds.
 
 ### Saved models must not use a Lambda layer
 
@@ -177,6 +175,13 @@ serialises as a pickled function with no declared output shape and
 `load_model` fails on it. `train_bilstm.py` now uses a registered
 `AttentionPool` layer. Old checkpoints still load through `load_weights` into
 a rebuilt architecture, which is what `compare_models.py` does.
+
+### For the federated section (theirs, not ours)
+
+The recommended model has 43,073 parameters: 168 KB per client per round in
+float32, against 361 KB for the full Attention-BiLSTM. Gradient Boosting
+cannot be averaged at all, which is the actual argument for a neural model
+here - independent of the 0.012 degC.
 
 ## Repository layout
 
@@ -188,6 +193,7 @@ train_forecast.py       the baseline model comparison
 train_lstm.py           starting point for the BiLSTM work
 train_bilstm.py         Attention-BiLSTM, the conference-paper experiment
 compare_models.py       aligned comparison, significance, regimes, attention
+run_bilstm.sh           reproduces the whole conference-paper grid
 train_fallback.py       short-memory model
 train_anomaly.py        Layer 1
 sensor_check.py         Layer 2
