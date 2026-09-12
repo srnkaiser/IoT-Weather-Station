@@ -1,0 +1,8 @@
+architecture,seq_minutes,inputs,units,lr,n_seeds,MAE_mean,MAE_min,MAE_max,MAE_std,parameters,train_s,spread
+bilstm,60,raw+calendar,96,0.0003,1,0.4721,0.4721,0.4721,,86081,1328.0,0.0
+lstm,60,raw+calendar,96,0.0003,1,0.4735,0.4735,0.4735,,43073,617.0,0.0
+attention_lstm,60,raw+calendar,96,0.0003,1,0.4796,0.4796,0.4796,,46210,705.0,0.0
+attention_bilstm,60,raw+calendar,96,0.0003,2,0.4855,0.4812,0.4897,0.006,92290,936.0,0.0085
+attention_bilstm,60,raw,96,0.0003,2,0.5376,0.5372,0.5381,0.0006,89218,833.0,0.0009
+attention_bilstm,60,raw,64,0.001,1,0.5385,0.5385,0.5385,,43138,201.0,0.0
+attention_bilstm,720,raw,64,0.001,1,0.5421,0.5421,0.5421,,43138,754.0,0.0

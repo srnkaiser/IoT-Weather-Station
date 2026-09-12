@@ -576,12 +576,110 @@ def make_plots():
           "regime_breakdown.png")
 
 
+# --------------------------------------------------------------------------
+# Stage 4: aggregate repeated runs
+# --------------------------------------------------------------------------
+def summarise_runs():
+    """
+    Group every training run by configuration and report spread across seeds.
+
+    A single run is not a result here. The configurations differ from one
+    another by 0.001-0.018 degC and the same configuration differs from itself
+    by up to 0.009 degC depending on the seed, so a table of single runs would
+    rank architectures by which of them got the luckier initialisation. Only
+    the mean over repeats can be compared, and the spread has to be shown
+    beside it so the reader can see when a difference is inside the noise.
+    """
+    rows = []
+    for path in sorted(cfg.RESULTS_DIR.glob("bilstm_*.json")):
+        d = json.load(open(path))
+        rows.append({
+            "tag": path.stem.replace("bilstm_", ""),
+            "architecture": d.get("architecture", "attention_bilstm"),
+            "seq_minutes": d["seq_minutes"],
+            "inputs": ("engineered" if d.get("engineered_features") else
+                       "raw+calendar" if d.get("calendar_channels") else "raw"),
+            "units": d.get("units", 64),
+            "lr": d.get("learning_rate", 1e-3),
+            "seed": d.get("seed"),
+            "parameters": d["parameters"],
+            "MAE": d["MAE"],
+            "skill": d["Skill_vs_Persistence_%"],
+            "train_s": d["train_seconds"],
+        })
+    runs = pd.DataFrame(rows)
+    if runs.empty:
+        raise SystemExit("No runs found.")
+
+    # Hyperparameters belong in the key. Without them the untuned 64-unit run
+    # lands in the same group as the tuned 96-unit ones and inflates that
+    # group's spread with a difference that is not a seed difference at all.
+    key = ["architecture", "seq_minutes", "inputs", "units", "lr"]
+    agg = (runs.groupby(key)
+           .agg(n_seeds=("MAE", "size"), MAE_mean=("MAE", "mean"),
+                MAE_min=("MAE", "min"), MAE_max=("MAE", "max"),
+                MAE_std=("MAE", "std"), parameters=("parameters", "max"),
+                train_s=("train_s", "mean"))
+           .reset_index().sort_values("MAE_mean"))
+    agg["spread"] = agg.MAE_max - agg.MAE_min
+    for c in ("MAE_mean", "MAE_min", "MAE_max", "MAE_std", "spread"):
+        agg[c] = agg[c].round(4)
+    agg["train_s"] = agg.train_s.round(0)
+
+    # The baseline is deterministic (fixed random_state), so it is a point,
+    # not a distribution - shown as a reference line rather than a row.
+    base = json.load(open(cfg.RESULTS_DIR / "forecast_metrics.json"))
+    gb = base["GradientBoosting"]["MAE"]
+
+    print("=" * 96)
+    print("EVERY RUN, GROUPED BY CONFIGURATION")
+    print("=" * 96)
+    print(agg.to_string(index=False))
+    print(f"\nGradient Boosting baseline: MAE {gb:.4f} (deterministic, one run)")
+
+    print("\n" + "-" * 96)
+    print("IS A DIFFERENCE BIGGER THAN THE NOISE IT SITS IN?")
+    print("-" * 96)
+    multi = agg[agg.n_seeds > 1]
+    if len(multi) == 0:
+        print("  No configuration has repeats yet.")
+    else:
+        worst = float(multi.spread.max())
+        print(f"  Largest observed within-configuration spread: {worst:.4f} degC")
+        print(f"  Treat any gap below that as unresolved.\n")
+        best = agg.iloc[0]
+        for _, r in agg.iloc[1:].iterrows():
+            gap = r.MAE_mean - best.MAE_mean
+            mark = "resolved" if gap > worst else "INSIDE THE NOISE"
+            print(f"  {r.architecture:<18} {r.inputs:<13} "
+                  f"u{int(r.units):<4} {r.MAE_mean:.4f}  vs best {gap:+.4f}  "
+                  f"{mark}")
+        print(f"\n  vs the baseline: best configuration is "
+              f"{best.MAE_mean - gb:+.4f} degC from Gradient Boosting")
+
+    runs.sort_values("MAE").to_csv(cfg.RESULTS_DIR / "all_runs.csv", index=False)
+    agg.to_csv(cfg.RESULTS_DIR / "runs_by_configuration.csv", index=False)
+    (cfg.RESULTS_DIR / "runs_by_configuration.md").write_text(
+        "# Every training run, grouped by configuration\n\n"
+        "A single run is not a result: configurations differ from one another "
+        "by 0.001-0.018 degC and the same configuration differs from itself by "
+        "up to 0.009 degC depending on the seed. Compare the means, and treat "
+        "a gap smaller than the spread column as unresolved.\n\n"
+        + agg.to_markdown(index=False)
+        + f"\n\nGradient Boosting baseline: MAE {gb:.4f} "
+          "(deterministic, one run).\n\n## Individual runs\n\n"
+        + runs.sort_values("MAE").to_markdown(index=False) + "\n")
+    print("\nSaved -> results/runs_by_configuration.md, .csv, all_runs.csv")
+
+
 def main():
     ap = argparse.ArgumentParser()
     ap.add_argument("--export-baseline", action="store_true")
     ap.add_argument("--export-bilstm", type=str, metavar="TAG")
     ap.add_argument("--analyse", action="store_true")
     ap.add_argument("--plots", action="store_true")
+    ap.add_argument("--summary", action="store_true",
+                    help="group every run by configuration, show seed spread")
     args = ap.parse_args()
 
     if args.export_baseline:
@@ -592,6 +690,8 @@ def main():
         analyse()
     elif args.plots:
         make_plots()
+    elif args.summary:
+        summarise_runs()
     else:
         ap.print_help()
 

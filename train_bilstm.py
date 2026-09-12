@@ -235,9 +235,12 @@ def main():
         # loses, the architecture itself is the weaker choice here.
         #
         # The feature set already contains lags, so a window over it is
-        # redundant by construction. That is the point: it holds the input
-        # information constant with the baseline, which is what is being
-        # tested.
+        # redundant by construction. Note the asymmetry this creates and do
+        # not overstate the result: the baseline sees these features at the
+        # issue time only, the sequence model sees them across six timesteps,
+        # so it has at least as much information and possibly more. That
+        # makes a loss here conclusive - the architecture is not being
+        # starved - while a win would not cleanly isolate the architecture.
         from features import build_features
         base = load_dataset()
         feat = build_features(base).dropna()
