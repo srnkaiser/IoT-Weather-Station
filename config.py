@@ -170,6 +170,17 @@ ALTITUDE_INVARIANT_PRESSURE = True
 PRESSURE_ANOMALY_MIN_WINDOW = 720  # 12 h
 
 # --------------------------------------------------------------------------
+# Figures
+# --------------------------------------------------------------------------
+# BRAINCON requires 600 dpi for every figure in the manuscript. Set here
+# rather than at each savefig call, so a future venue with a different
+# requirement is one edit and not nine.
+#
+# At 600 dpi a 13 x 4.6 inch figure is 7800 x 2760 px and roughly 1-3 MB.
+# That is the point of the requirement: print reproduction, not screens.
+FIGURE_DPI = 600
+
+# --------------------------------------------------------------------------
 # Model training
 # --------------------------------------------------------------------------
 TEST_SIZE = 0.2          # chronological split - never shuffle time series

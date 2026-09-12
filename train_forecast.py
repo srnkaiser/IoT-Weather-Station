@@ -71,7 +71,7 @@ def plot_predictions(idx, y_true, preds: dict, out_path: Path, hours: int = 96):
     ax.legend(ncol=5, fontsize=9)
     ax.grid(alpha=0.25)
     fig.tight_layout()
-    fig.savefig(out_path, dpi=150)
+    fig.savefig(out_path, dpi=cfg.FIGURE_DPI)
     plt.close(fig)
 
 
@@ -86,7 +86,7 @@ def plot_importance(model, feature_names, out_path: Path, top: int = 18):
     ax.set_xlabel("Relative importance")
     ax.grid(axis="x", alpha=0.25)
     fig.tight_layout()
-    fig.savefig(out_path, dpi=150)
+    fig.savefig(out_path, dpi=cfg.FIGURE_DPI)
     plt.close(fig)
 
 
@@ -100,7 +100,7 @@ def plot_error_distribution(y_true, preds: dict, out_path: Path):
     ax.legend()
     ax.grid(alpha=0.25)
     fig.tight_layout()
-    fig.savefig(out_path, dpi=150)
+    fig.savefig(out_path, dpi=cfg.FIGURE_DPI)
     plt.close(fig)
 
 

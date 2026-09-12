@@ -265,7 +265,7 @@ def main():
     axes[1].set_ylabel("Anomaly score")
     axes[1].grid(alpha=0.25)
     fig.tight_layout()
-    fig.savefig(cfg.RESULTS_DIR / "anomaly_detection.png", dpi=150)
+    fig.savefig(cfg.RESULTS_DIR / "anomaly_detection.png", dpi=cfg.FIGURE_DPI)
     plt.close(fig)
 
     print("\nSaved model   -> models/anomaly_model.joblib")

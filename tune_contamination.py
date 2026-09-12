@@ -141,7 +141,7 @@ def main():
     ax.legend()
     ax.grid(alpha=0.25)
     fig.tight_layout()
-    fig.savefig(cfg.RESULTS_DIR / "contamination_sensitivity.png", dpi=150)
+    fig.savefig(cfg.RESULTS_DIR / "contamination_sensitivity.png", dpi=cfg.FIGURE_DPI)
     plt.close(fig)
 
     table.to_csv(cfg.RESULTS_DIR / "contamination_sensitivity.csv")
