@@ -106,6 +106,16 @@ def export_bilstm(tag: str):
     horizon = cfg.FORECAST_HORIZON_MIN // cfg.STEP_MINUTES
     use_cal = bool(spec.get("calendar_channels", False))
 
+    if spec.get("engineered_features", False):
+        from features import build_features
+        base = load_dataset()
+        feat = build_features(base).dropna()
+        feat[cfg.TARGET] = base[cfg.TARGET].reindex(feat.index)
+        df = feat.dropna()
+        channels = [c for c in df.columns if c != cfg.TARGET] + [cfg.TARGET]
+        df = df[channels]
+        return _run_export(tag, spec, df, channels, seq_len, horizon)
+
     df = load_dataset()[BASE_CHANNELS].dropna()
     if use_cal:
         idx = df.index
@@ -117,6 +127,12 @@ def export_bilstm(tag: str):
         df["doy_cos"] = np.cos(2 * np.pi * doy / 365.25)
     channels = BASE_CHANNELS + (CALENDAR_CHANNELS if use_cal else [])
     df = df[channels]
+    return _run_export(tag, spec, df, channels, seq_len, horizon)
+
+
+def _run_export(tag, spec, df, channels, seq_len, horizon):
+    import numpy as np
+    from tensorflow import keras
 
     values = df.to_numpy(dtype=np.float32)
     target = df[cfg.TARGET].to_numpy(dtype=np.float32)
@@ -314,6 +330,29 @@ def analyse():
         print(f"  {name:<32} gap {gap:+.4f} degC   DM {stat:+6.2f}   "
               f"p {p:.2e}   95% CI [{lo:+.4f}, {hi:+.4f}]   {verdict}")
 
+    # A reviewer will ask whether the sequence model is merely mis-calibrated.
+    # Answered with an oracle correction - the mean error removed using the
+    # test set itself, which no legitimate method could beat. If even that
+    # does not close the gap, calibration is not the explanation.
+    print("\n" + "-" * 74)
+    print("COULD BIAS CORRECTION CLOSE IT?  (oracle bound, not a usable method)")
+    print("-" * 74)
+    bias_rows = []
+    for name in names:
+        e = err[name]
+        mae, mae_c = float(np.abs(e).mean()), float(np.abs(e - e.mean()).mean())
+        bias_rows.append({"model": name, "MAE": round(mae, 4),
+                          "MAE_debiased": round(mae_c, 4),
+                          "gain": round(mae - mae_c, 4)})
+        print(f"  {name:<32} {mae:.4f} -> {mae_c:.4f}   gain {mae - mae_c:.4f}")
+    gb_c = bias_rows[0]["MAE_debiased"]
+    others = [r for r in bias_rows[1:]]
+    if others:
+        best_other = min(others, key=lambda r: r["MAE_debiased"])
+        print(f"  Gap after debiasing both: "
+              f"{best_other['MAE_debiased'] - gb_c:+.4f} degC "
+              f"(was {best_other['MAE'] - bias_rows[0]['MAE']:+.4f})")
+
     print("\n" + "-" * 74)
     print("HAC lag sensitivity (does the verdict depend on the window?)")
     print("-" * 74)
@@ -383,6 +422,12 @@ def analyse():
              f"## Significance (Diebold-Mariano, HAC {max_lag} lags, "
              f"reference '{best}')\n",
              pd.DataFrame(stats).to_markdown(index=False), "",
+             "### Is it just a calibration offset?\n",
+             "An oracle correction - the mean error removed using the test "
+             "set itself, which no legitimate method could beat. If even "
+             "this does not close the gap, calibration is not the "
+             "explanation.\n",
+             pd.DataFrame(bias_rows).to_markdown(index=False), "",
              "The HAC window is a choice, so here is the same test across a "
              "range of windows. The verdict does not depend on it.\n",
              pd.DataFrame(lag_rows).to_markdown(index=False), "",

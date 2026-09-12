@@ -200,6 +200,10 @@ def main():
                          "attention-weighted sum")
     ap.add_argument("--unidirectional", action="store_true",
                     help="ablation: forward LSTM instead of bidirectional")
+    ap.add_argument("--features", action="store_true",
+                    help="feed the baseline's engineered feature set as "
+                         "channels instead of the three raw sensor series; "
+                         "separates 'better architecture' from 'better inputs'")
     ap.add_argument("--calendar", action="store_true",
                     help="add the baseline's four calendar features as extra "
                          "input channels (makes the input sets comparable)")
@@ -223,12 +227,33 @@ def main():
           f"({seq_len} steps)  |  {cfg.FORECAST_HORIZON_MIN} min horizon")
     print("=" * 70)
 
-    channels = BASE_CHANNELS + (CALENDAR_CHANNELS if args.calendar else [])
-    df = load_dataset()[BASE_CHANNELS].dropna()
-    if args.calendar:
-        df = add_calendar(df)
-    df = df[channels]
-    print(f"Input channels: {', '.join(channels)}")
+    if args.features:
+        # The decisive control. If the sequence model matches the baseline
+        # once it is handed the same engineered inputs, then the gap was
+        # never about the architecture and the federated design can keep a
+        # sequence model without paying for it in accuracy. If it still
+        # loses, the architecture itself is the weaker choice here.
+        #
+        # The feature set already contains lags, so a window over it is
+        # redundant by construction. That is the point: it holds the input
+        # information constant with the baseline, which is what is being
+        # tested.
+        from features import build_features
+        base = load_dataset()
+        feat = build_features(base).dropna()
+        feat[cfg.TARGET] = base[cfg.TARGET].reindex(feat.index)
+        df = feat.dropna()
+        channels = [c for c in df.columns if c != cfg.TARGET] + [cfg.TARGET]
+        df = df[channels]
+        print(f"Input channels: {len(channels)} engineered features "
+              f"(same set as the baseline, plus the target series)")
+    else:
+        channels = BASE_CHANNELS + (CALENDAR_CHANNELS if args.calendar else [])
+        df = load_dataset()[BASE_CHANNELS].dropna()
+        if args.calendar:
+            df = add_calendar(df)
+        df = df[channels]
+        print(f"Input channels: {', '.join(channels)}")
     values = df.to_numpy(dtype=np.float32)
     target = df[cfg.TARGET].to_numpy(dtype=np.float32)
 
@@ -289,6 +314,7 @@ def main():
     m["patience"] = args.patience
     m["reduce_lr_on_plateau"] = bool(args.reduce_lr)
     m["calendar_channels"] = bool(args.calendar)
+    m["engineered_features"] = bool(args.features)
     m["n_channels"] = len(channels)
     m["seed"] = args.seed
     m["architecture"] = model.name
