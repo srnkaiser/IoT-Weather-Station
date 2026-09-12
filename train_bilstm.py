@@ -18,8 +18,9 @@ model has no advantage in extracting.
 
 TWO SEQUENCE LENGTHS, DELIBERATELY
 
-  60 min   identical information to the baseline. The fair comparison: does
-           the architecture help, holding input information constant?
+  60 min   same history length as the baseline. Run it with --calendar to
+           hold the input information genuinely constant: does the
+           architecture help by itself?
   12 h     what a sequence model would normally be given. Answers whether
            longer history is worth anything at this horizon.
 
@@ -58,7 +59,49 @@ except ImportError:
         "  .venv-tf/bin/pip install tensorflow\n"
         "then run this script with .venv-tf/bin/python")
 
-CHANNELS = ["temperature", "humidity", "pressure"]
+@keras.utils.register_keras_serializable(package="weather")
+class AttentionPool(keras.layers.Layer):
+    """
+    Sum a sequence along the time axis after attention weighting.
+
+    This was a Lambda layer until it turned out that a Lambda saves as a
+    pickled Python function with no declared output shape, so the saved model
+    could not be loaded again - not by us, and not by anyone we send it to.
+    A registered layer serialises by name and reloads cleanly.
+    """
+
+    def call(self, inputs):
+        seq, weights = inputs
+        return tf.reduce_sum(seq * weights, axis=1)
+
+    def compute_output_shape(self, input_shape):
+        seq_shape, _ = input_shape
+        return (seq_shape[0], seq_shape[2])
+
+
+BASE_CHANNELS = ["temperature", "humidity", "pressure"]
+
+# The baseline feature set contains four calendar features (hour_sin/cos,
+# doy_sin/cos) that a raw sequence does not carry. A sequence model can read
+# the recent trend, but it cannot know whether 14 degC at a rising trend is a
+# spring morning or an autumn afternoon - and at a 60-minute horizon the point
+# of the daily cycle matters. Withholding them would make the comparison
+# unfair to the sequence model and the result easy to dismiss, so they are
+# available as extra input channels via --calendar.
+CALENDAR_CHANNELS = ["hour_sin", "hour_cos", "doy_sin", "doy_cos"]
+
+
+def add_calendar(df: pd.DataFrame) -> pd.DataFrame:
+    """Same cyclic encoding as features.py, so both models see it identically."""
+    idx = df.index
+    hod = idx.hour.to_numpy() + idx.minute.to_numpy() / 60.0
+    doy = idx.dayofyear.to_numpy().astype(float)
+    out = df.copy()
+    out["hour_sin"] = np.sin(2 * np.pi * hod / 24.0)
+    out["hour_cos"] = np.cos(2 * np.pi * hod / 24.0)
+    out["doy_sin"] = np.sin(2 * np.pi * doy / 365.25)
+    out["doy_cos"] = np.cos(2 * np.pi * doy / 365.25)
+    return out
 
 
 def make_sequences(arr: np.ndarray, target: np.ndarray, seq_len: int,
@@ -81,7 +124,8 @@ def make_sequences(arr: np.ndarray, target: np.ndarray, seq_len: int,
     return np.ascontiguousarray(X), np.ascontiguousarray(y)
 
 
-def build_model(seq_len: int, n_channels: int, units: int = 64):
+def build_model(seq_len: int, n_channels: int, units: int = 64,
+                attention: bool = True, bidirectional: bool = True):
     """
     BiLSTM followed by additive attention over the time axis.
 
@@ -91,24 +135,38 @@ def build_model(seq_len: int, n_channels: int, units: int = 64):
     weight recent and older observations differently, and the weights can be
     read out afterwards to show which part of the history the forecast relied
     on - the interpretability claim in the paper draft.
+
+    The two switches exist so the name can be taken apart. "Attention-BiLSTM"
+    asserts that both halves earn their place; the only way to know is to
+    remove one at a time and measure. Without attention the readout becomes
+    the final hidden state, which is what a plain BiLSTM regressor does;
+    without bidirectionality the layer is an ordinary forward LSTM.
     """
     inp = keras.layers.Input(shape=(seq_len, n_channels), name="sequence")
 
-    seq = keras.layers.Bidirectional(
-        keras.layers.LSTM(units, return_sequences=True), name="bilstm")(inp)
+    core = keras.layers.LSTM(units, return_sequences=attention)
+    seq = (keras.layers.Bidirectional(core, name="bilstm")(inp)
+           if bidirectional else
+           keras.layers.LSTM(units, return_sequences=attention,
+                             name="lstm")(inp))
     seq = keras.layers.Dropout(0.15)(seq)
 
-    # Additive (Bahdanau-style) attention over timesteps.
-    score = keras.layers.Dense(32, activation="tanh", name="att_hidden")(seq)
-    score = keras.layers.Dense(1, name="att_score")(score)
-    weights = keras.layers.Softmax(axis=1, name="attention_weights")(score)
-    context = keras.layers.Multiply()([seq, weights])
-    context = keras.layers.Lambda(
-        lambda t: tf.reduce_sum(t, axis=1), name="context")(context)
+    if attention:
+        # Additive (Bahdanau-style) attention over timesteps.
+        score = keras.layers.Dense(32, activation="tanh", name="att_hidden")(seq)
+        score = keras.layers.Dense(1, name="att_score")(score)
+        weights = keras.layers.Softmax(axis=1, name="attention_weights")(score)
+        context = AttentionPool(name="context")([seq, weights])
+    else:
+        # return_sequences=False already collapsed the time axis.
+        context = seq
 
     x = keras.layers.Dense(32, activation="relu")(context)
     out = keras.layers.Dense(1, name="forecast")(x)
-    return keras.Model(inp, out, name="attention_bilstm")
+    name = ("attention_bilstm" if attention and bidirectional else
+            "bilstm" if bidirectional else
+            "attention_lstm" if attention else "lstm")
+    return keras.Model(inp, out, name=name)
 
 
 def metrics(y_true, y_pred, baseline_mae):
@@ -131,7 +189,31 @@ def main():
     ap.add_argument("--epochs", type=int, default=40)
     ap.add_argument("--units", type=int, default=64)
     ap.add_argument("--batch", type=int, default=256)
+    ap.add_argument("--lr", type=float, default=1e-3,
+                    help="initial learning rate")
+    ap.add_argument("--patience", type=int, default=5,
+                    help="early-stopping patience in epochs")
+    ap.add_argument("--reduce-lr", action="store_true",
+                    help="halve the learning rate when validation stalls")
+    ap.add_argument("--no-attention", action="store_true",
+                    help="ablation: read out the final state instead of an "
+                         "attention-weighted sum")
+    ap.add_argument("--unidirectional", action="store_true",
+                    help="ablation: forward LSTM instead of bidirectional")
+    ap.add_argument("--calendar", action="store_true",
+                    help="add the baseline's four calendar features as extra "
+                         "input channels (makes the input sets comparable)")
+    ap.add_argument("--seed", type=int, default=cfg.RANDOM_STATE,
+                    help="random seed; vary it to measure run-to-run spread")
+    ap.add_argument("--tag", type=str, default=None,
+                    help="suffix for the output files")
     args = ap.parse_args()
+
+    # Without this the weight initialisation differs on every run, so two
+    # results cannot be compared at all - a 0.004 degC difference would be
+    # indistinguishable from noise. Seeded, a repeat run reproduces exactly,
+    # and varying the seed on purpose measures the spread.
+    keras.utils.set_random_seed(args.seed)
 
     seq_len = max(2, args.seq_minutes // cfg.STEP_MINUTES)
     horizon = cfg.FORECAST_HORIZON_MIN // cfg.STEP_MINUTES
@@ -141,7 +223,12 @@ def main():
           f"({seq_len} steps)  |  {cfg.FORECAST_HORIZON_MIN} min horizon")
     print("=" * 70)
 
-    df = load_dataset()[CHANNELS].dropna()
+    channels = BASE_CHANNELS + (CALENDAR_CHANNELS if args.calendar else [])
+    df = load_dataset()[BASE_CHANNELS].dropna()
+    if args.calendar:
+        df = add_calendar(df)
+    df = df[channels]
+    print(f"Input channels: {', '.join(channels)}")
     values = df.to_numpy(dtype=np.float32)
     target = df[cfg.TARGET].to_numpy(dtype=np.float32)
 
@@ -166,17 +253,28 @@ def main():
     base_mae = float(np.mean(np.abs(yte - persist)))
     print(f"Persistence on these samples: MAE {base_mae:.4f}")
 
-    model = build_model(seq_len, len(CHANNELS), args.units)
-    model.compile(optimizer=keras.optimizers.Adam(1e-3), loss="mse",
+    model = build_model(seq_len, len(channels), args.units,
+                        attention=not args.no_attention,
+                        bidirectional=not args.unidirectional)
+    print(f"Architecture: {model.name}")
+    model.compile(optimizer=keras.optimizers.Adam(args.lr), loss="mse",
                   metrics=["mae"])
     print(f"Parameters: {model.count_params():,}")
 
-    stop = keras.callbacks.EarlyStopping(
-        monitor="val_mae", patience=5, restore_best_weights=True, verbose=1)
+    callbacks = [keras.callbacks.EarlyStopping(
+        monitor="val_mae", patience=args.patience,
+        restore_best_weights=True, verbose=1)]
+    if args.reduce_lr:
+        # Halving the rate when validation stalls gives the model a chance to
+        # settle into a minimum instead of bouncing past it - the 12-hour run
+        # peaked at epoch 3 and then degraded, which is what that looks like.
+        callbacks.append(keras.callbacks.ReduceLROnPlateau(
+            monitor="val_mae", factor=0.5, patience=max(2, args.patience // 3),
+            min_lr=1e-5, verbose=1))
 
     t0 = time.time()
     model.fit(Xtr, ytr, validation_split=0.15, epochs=args.epochs,
-              batch_size=args.batch, callbacks=[stop], verbose=2)
+              batch_size=args.batch, callbacks=callbacks, verbose=2)
     train_seconds = time.time() - t0
 
     pred = model.predict(Xte, batch_size=512, verbose=0).ravel()
@@ -186,6 +284,16 @@ def main():
     m["parameters"] = int(model.count_params())
     m["train_seconds"] = round(train_seconds, 1)
     m["test_samples"] = int(len(yte))
+    m["learning_rate"] = args.lr
+    m["units"] = args.units
+    m["patience"] = args.patience
+    m["reduce_lr_on_plateau"] = bool(args.reduce_lr)
+    m["calendar_channels"] = bool(args.calendar)
+    m["n_channels"] = len(channels)
+    m["seed"] = args.seed
+    m["architecture"] = model.name
+    m["attention"] = not args.no_attention
+    m["bidirectional"] = not args.unidirectional
 
     print("\n" + "-" * 70)
     print("RESULT")
@@ -193,7 +301,7 @@ def main():
     for k, v in m.items():
         print(f"  {k:<26} {v}")
 
-    tag = f"{args.seq_minutes}min"
+    tag = args.tag or f"{args.seq_minutes}min"
     out = cfg.RESULTS_DIR / f"bilstm_{tag}.json"
     with open(out, "w") as f:
         json.dump(m, f, indent=2)

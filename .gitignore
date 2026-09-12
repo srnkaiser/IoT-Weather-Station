@@ -31,3 +31,9 @@ venv/
 
 # TensorFlow virtual environment
 .venv-tf/
+
+# Per-sample prediction dumps: ~3 MB each and regenerated in one command by
+# compare_models.py. The attention weight files are a few kB and ARE
+# committed, because they are the source data for a paper figure.
+results/predictions/*.csv
+!results/predictions/attention_*.csv
